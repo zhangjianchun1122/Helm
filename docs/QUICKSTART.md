@@ -89,7 +89,7 @@ browser-tool 通过 MCP stdio 暴露 21 个工具，任何支持 MCP 的 Agent �
       "browser-tool": {
         "type": "stdio",
         "command": "node",
-        "args": ["D:\\<项目根目录>\\browser-tool\\gateway\\mcp-server.mjs"]
+        "args": ["/path/to/browser-tool/gateway/mcp-server.mjs"]
       }
     }
   }
@@ -106,13 +106,13 @@ browser-tool 通过 MCP stdio 暴露 21 个工具，任何支持 MCP 的 Agent �
     "browser-tool": {
       "type": "stdio",
       "command": "node",
-      "args": ["D:\\<项目根目录>\\browser-tool\\gateway\\mcp-server.mjs"]
+      "args": ["/path/to/browser-tool/gateway/mcp-server.mjs"]
     }
   }
 }
 ```
 
-或用 CLI：`claude mcp add browser-tool -s user -- node /path/to/browser-tool\gateway\mcp-server.mjs`
+或用 CLI：`claude mcp add browser-tool -s user -- node /path/to/browser-tool/gateway/mcp-server.mjs`
 
 ### Qwen CLI
 
@@ -123,7 +123,7 @@ browser-tool 通过 MCP stdio 暴露 21 个工具，任何支持 MCP 的 Agent �
   "mcpServers": {
     "browser-tool": {
       "command": "node",
-      "args": ["D:\\<项目根目录>\\browser-tool\\gateway\\mcp-server.mjs"]
+      "args": ["/path/to/browser-tool/gateway/mcp-server.mjs"]
     }
   }
 }
@@ -137,7 +137,7 @@ browser-tool 通过 MCP stdio 暴露 21 个工具，任何支持 MCP 的 Agent �
 mcp_servers:
   browser-tool:
     command: "node"
-    args: ["D:\\<项目根目录>\\browser-tool\\gateway\\mcp-server.mjs"]
+    args: ["/path/to/browser-tool/gateway/mcp-server.mjs"]
 ```
 
 ### Codex CLI (OpenAI)
@@ -147,7 +147,7 @@ mcp_servers:
 ```toml
 [mcp_servers.browser-tool]
 command = "node"
-args = ["D:\\<项目根目录>\\browser-tool\\gateway\\mcp-server.mjs"]
+args = ["/path/to/browser-tool/gateway/mcp-server.mjs"]
 ```
 
 > 注：Codex 有内置浏览器工具，与 browser-tool 功能重叠。在 Codex 中建议使用其自带工具。
