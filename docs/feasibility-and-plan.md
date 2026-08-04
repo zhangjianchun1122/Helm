@@ -163,7 +163,7 @@
 **阶段 2 — 多 Agent 接入 + 可靠性（1～2 周）**
 - 网关加 OpenAI 兼容 function-calling 端点，接入 Qwen Agent / Hermes。
 - 高危动作确认、动作回放、错误恢复与重试策略。
-- 用 PMS 全流程（`` 的等价场景）作为回归用例：验证"遍历目录→右键下载→增量清单"。
+- 用复杂多 iframe 站点全流程作为回归用例：验证"遍历目录→右键下载→增量清单"。
 - 验收：同一套工具，至少 3 个不同 Agent 各自完成 2 个不同站点的任务。
 
 **阶段 3 — 生产化（按需）**
@@ -176,7 +176,6 @@
 ```
 browser-tool/
 ├─ docs/
-│  ├─             # 参考脚本（）
 │  └─ feasibility-and-plan.md      # 本文件
 ├─ extension/                      # Chrome 扩展（MV3，站点无关）
 │  ├─ manifest.json

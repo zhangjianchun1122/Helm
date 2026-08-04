@@ -25,7 +25,6 @@
 ```
 browser-tool/
 ├─ docs/
-│  ├─ pms_automation.py          # 参考脚本（PMS 案例，仅作对照）
 │  ├─ feasibility-and-plan.md     # 可行性与方案
 │  └─ QUICKSTART.md               # 本文件
 ├─ extension/                     # Chrome 扩展（MV3）
