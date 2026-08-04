@@ -1,0 +1,89 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Helm — Pilot your web</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: system-ui, -apple-system, sans-serif;
+        /* Helm 品牌色 */
+        --teal: #0F766E;
+        --teal-dark: #0B5F58;
+        --amber: #F59E0B;
+        --amber-light: #FCD34D;
+        --bg: #0f172a;
+        --card: #1e293b;
+        --border: #334155;
+        --text: #e2e8f0;
+        --text-dim: #94a3b8;
+        --ok: #22c55e;
+        --err: #ef4444;
+        --warn: #f59e0b;
+      }
+      @media (prefers-color-scheme: light) {
+        :root {
+          --bg: #f8fafc;
+          --card: #ffffff;
+          --border: #e2e8f0;
+          --text: #0f172a;
+          --text-dim: #64748b;
+        }
+      }
+      body { margin: 0; padding: 10px; font-size: 12px; background: var(--bg); color: var(--text); }
+      header { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+      .logo { font-size: 15px; font-weight: 700; color: var(--teal); letter-spacing: -0.3px; }
+      .logo span { color: var(--amber); }
+      .status { font-size: 11px; padding: 3px 8px; border-radius: 10px; margin-left: auto;
+                background: var(--card); border: 1px solid var(--border); color: var(--text-dim); }
+      .status.ok { color: var(--ok); border-color: var(--ok); }
+      .status.err { color: var(--err); border-color: var(--err); }
+
+      .toolbar { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; font-size: 11px; color: var(--text-dim); }
+      .toolbar button { font-size: 11px; padding: 3px 8px; background: var(--card); border: 1px solid var(--border);
+                        border-radius: 4px; color: var(--text); cursor: pointer; }
+      .toolbar button:hover { border-color: var(--teal); }
+      .stat { margin-left: auto; }
+      .stat b { color: var(--amber); }
+
+      #flow { display: flex; flex-direction: column; gap: 6px; max-height: 75vh; overflow-y: auto; }
+      .card { background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px;
+              font-size: 11px; animation: fadeIn 0.2s; }
+      .card.running { border-left: 3px solid var(--amber); }
+      .card.ok { border-left: 3px solid var(--ok); }
+      .card.err { border-left: 3px solid var(--err); }
+      .card.confirm { border-left: 3px solid var(--amber); background: #78350f33; animation: pulse 1s ease-in-out infinite; }
+      @keyframes pulse { 0%,100% { background: #78350f22; } 50% { background: #78350f44; } }
+      .risk { margin-left: 8px; color: var(--amber); font-size: 10px; font-weight: 600; }
+      @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+      .card-head { display: flex; align-items: center; gap: 6px; }
+      .icon { font-size: 13px; line-height: 1; }
+      .action-name { font-weight: 600; }
+      .duration { margin-left: auto; color: var(--text-dim); font-size: 10px; font-family: ui-monospace, monospace; }
+      .args { color: var(--text-dim); font-family: ui-monospace, monospace; font-size: 10px;
+              margin-top: 4px; word-break: break-all; }
+      .result { color: var(--text-dim); font-family: ui-monospace, monospace; font-size: 10px;
+                margin-top: 3px; word-break: break-all; }
+      .result.err { color: var(--err); }
+      .thumb { max-width: 100%; max-height: 120px; border-radius: 4px; margin-top: 6px;
+               border: 1px solid var(--border); cursor: pointer; }
+      .empty { text-align: center; color: var(--text-dim); padding: 24px 8px; font-size: 11px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="logo">Helm <span>●</span></div>
+      <div id="status" class="status">检测中…</div>
+    </header>
+    <div class="toolbar">
+      <button id="clear">清空</button>
+      <button id="pause">暂停滚动</button>
+      <span class="stat">共 <b id="count">0</b> 步 · 成功 <b id="okCount">0</b> · 失败 <b id="errCount">0</b></span>
+    </div>
+    <div id="flow"></div>
+    <div id="empty" class="empty">等待 Agent 下发指令…</div>
+
+    <script src="sidepanel.js"></script>
+  </body>
+</html>

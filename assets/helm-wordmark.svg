@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <!--
+    Helm — 横版 wordmark（上架 banner / README 头图 / landing 页用）
+    左侧图标 + 右侧字标。
+  -->
+  <defs>
+    <linearGradient id="bg256" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0F766E"/>
+      <stop offset="1" stop-color="#0B5F58"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 图标（左） -->
+  <g transform="translate(16,16)">
+    <rect x="4" y="4" width="120" height="120" rx="24" fill="url(#bg256)"/>
+    <rect x="24" y="28" width="80" height="72" rx="8" fill="none" stroke="#E2E8F0" stroke-width="3"/>
+    <line x1="24" y1="44" x2="104" y2="44" stroke="#E2E8F0" stroke-width="3"/>
+    <circle cx="34" cy="36" r="2.5" fill="#94A3B8"/>
+    <circle cx="44" cy="36" r="2.5" fill="#94A3B8"/>
+    <circle cx="54" cy="36" r="2.5" fill="#94A3B8"/>
+    <g stroke="#F59E0B" stroke-width="3.5" stroke-linecap="round" fill="none">
+      <line x1="64" y1="52" x2="64" y2="64"/>
+      <polyline points="58,60 64,52 70,60"/>
+      <line x1="64" y1="64" x2="64" y2="88"/>
+      <polyline points="58,82 64,88 70,82"/>
+      <line x1="64" y1="64" x2="36" y2="64"/>
+      <polyline points="44,60 36,64 44,68"/>
+      <line x1="64" y1="64" x2="92" y2="64"/>
+      <polyline points="84,60 92,64 84,68"/>
+    </g>
+    <circle cx="64" cy="64" r="4" fill="#F59E0B"/>
+  </g>
+
+  <!-- 字标（右） -->
+  <g transform="translate(160,0)">
+    <!-- Helm 主字 -->
+    <text x="0" y="100" font-family="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
+          font-size="72" font-weight="700" fill="#0F766E" letter-spacing="-2">Helm</text>
+    <!-- 副标 -->
+    <text x="4" y="140" font-family="ui-sans-serif, system-ui, sans-serif"
+          font-size="20" font-weight="500" fill="#64748B">Pilot your web.</text>
+    <!-- 下划线琥珀强调 -->
+    <rect x="4" y="150" width="120" height="4" rx="2" fill="#F59E0B"/>
+  </g>
+</svg>

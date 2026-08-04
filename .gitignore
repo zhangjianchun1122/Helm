@@ -1,0 +1,25 @@
+# 依赖
+node_modules/
+gateway/node_modules/
+
+# 打包产物
+dist/
+
+# 运行时产物
+gateway/audit-log.txt
+downloads/
+
+# IDE / 编辑器
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 系统文件
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# ZCode 本地状态
+.zcode/

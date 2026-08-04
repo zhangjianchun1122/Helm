@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Helm 图标生成</title>
+<style>body{font-family:system-ui;background:#1e293b;color:#e2e8f0;padding:20px}
+.img{display:inline-block;margin:16px;text-align:center}
+.img canvas{background:#0b5f58;border-radius:8px}
+a{color:#f59e0b;text-decoration:none;font-size:14px}</style></head>
+<body>
+<h2>Helm 图标 — 右键下方图片另存，或点击链接下载</h2>
+<div id="out"></div>
+<script>
+const C = (size) => {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  return c;
+};
+// 在 canvas 上画 Helm 图标
+function draw(size){
+  const c = C(size), x = c.getContext('2d');
+  const s = size / 128; // scale
+  // 底色圆角块
+  x.fillStyle = '#0F766E';
+  roundRect(x, 4*s, 4*s, 120*s, 120*s, 24*s); x.fill();
+  // 浏览器窗口轮廓
+  x.strokeStyle = '#E2E8F0'; x.lineWidth = 3*s;
+  roundRect(x, 24*s, 28*s, 80*s, 72*s, 8*s); x.stroke();
+  // 顶栏分隔
+  x.beginPath(); x.moveTo(24*s, 44*s); x.lineTo(104*s, 44*s); x.stroke();
+  // 顶栏圆点
+  x.fillStyle = '#94A3B8';
+  [34,44,54].forEach(cx => { x.beginPath(); x.arc(cx*s, 36*s, 2.5*s, 0, 7); x.fill(); });
+  // 罗盘指针（琥珀）
+  x.strokeStyle = '#F59E0B'; x.lineWidth = 3.5*s; x.lineCap = 'round';
+  const cx = 64*s, cy = 64*s;
+  // 上
+  line(x, cx, 52*s, cx, cy); arrow(x, cx, 52*s, cx, 58*s, 64*s, 70*s, 58*s);
+  // 下
+  line(x, cx, cy, cx, 88*s); arrow(x, cx, 88*s, cx, 82*s, 88*s, 70*s, 82*s);
+  // 左
+  line(x, cx, cy, 36*s, cy); arrow(x, 36*s, cy, 44*s, 60*s, 36*s, 64*s, 44*s, 68*s);
+  // 右
+  line(x, cx, cy, 92*s, cy); arrow(x, 92*s, cy, 84*s, 60*s, 92*s, 64*s, 84*s, 68*s);
+  // 中心圆点
+  x.fillStyle = '#F59E0B';
+  x.beginPath(); x.arc(cx, cy, 4*s, 0, 7); x.fill();
+  return c;
+}
+function roundRect(x,rx,ry,rw,rh,r){
+  x.beginPath();
+  x.moveTo(rx+r, ry);
+  x.arcTo(rx+rw, ry, rx+rw, ry+rh, r);
+  x.arcTo(rx+rw, ry+rh, rx, ry+rh, r);
+  x.arcTo(rx, ry+rh, rx, ry, r);
+  x.arcTo(rx, ry, rx+rw, ry, r);
+  x.closePath();
+}
+function line(x,x1,y1,x2,y2){x.beginPath();x.moveTo(x1,y1);x.lineTo(x2,y2);x.stroke();}
+function arrow(x,tipX,tipY,a1x,a1y,a2x,a2y){x.beginPath();x.moveTo(a1x,a1y);x.lineTo(tipX,tipY);x.lineTo(a2x,a2y);x.stroke();}
+
+const out = document.getElementById('out');
+[16, 48, 128].forEach(size => {
+  const c = draw(size);
+  const div = document.createElement('div'); div.className = 'img';
+  // 放大显示用 CSS（16px 太小看不清，用 CSS 放大到 64 显示）
+  const disp = c.cloneNode(true);
+  disp.style.width = disp.style.height = '64px';
+  div.appendChild(disp);
+  const label = document.createElement('div');
+  label.textContent = size + 'px';
+  div.appendChild(label);
+  const a = document.createElement('a');
+  a.textContent = `下载 icon${size}.png`;
+  a.download = `icon${size}.png`;
+  a.href = c.toDataURL('image/png');
+  a.style.display = 'block';
+  a.style.marginTop = '4px';
+  div.appendChild(a);
+  out.appendChild(div);
+});
+</script>
+</body>
+</html>
