@@ -277,7 +277,7 @@ powershell -File scripts/build-pack.ps1 -Version 0.1.0
 | ZCode | MCP stdio | ✅ 已验证 |
 | Qwen CLI | MCP stdio | ✅ 已验证 |
 | Hermes Agent | MCP stdio | ✅ 已验证 |
-| Claude Code | MCP stdio | ✅ 已验证 |
+| Claude Code | MCP stdio | ⬜ 待测 |
 | Codex CLI | MCP stdio | ⚠️ 建议用自带工具 |
 
 ## License
