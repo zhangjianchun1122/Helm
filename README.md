@@ -2,9 +2,9 @@
 
 <img src="assets/helm-wordmark.svg" width="360" alt="Helm — Pilot your web">
 
-# Helm
+<h1>Helm</h1>
 
-### 让 AI 在你真实浏览器里自主操作——点击、输入、下载，无需重登，不被识别为机器
+<h3>让 AI 在你真实浏览器里自主操作——点击、输入、下载，无需重登，不被识别为机器</h3>
 
 [![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-blue)](https://github.com/zhangjianchun1122/browser-tool)
 [![Chrome](https://img.shields.io/badge/Chrome-MV3-4285F4)](https://developer.chrome.com/docs/extensions/mv3/intro/)
