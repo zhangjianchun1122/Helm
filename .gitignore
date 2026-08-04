@@ -23,3 +23,8 @@ Desktop.ini
 
 # ZCode 本地状态
 .zcode/
+
+# 内部文档（含敏感信息，不公开）
+docs/PROGRESS.md
+docs/pms_automation.py
+docs/pms-regression-checklist.md
