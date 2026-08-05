@@ -37,6 +37,9 @@ Write-Step '准备暂存目录'
 if (Test-Path $STAGE_DIR) { Remove-Item $STAGE_DIR -Recurse -Force }
 if (Test-Path $DIST_DIR) { } else { New-Item -ItemType Directory -Path $DIST_DIR -Force | Out-Null }
 New-Item -ItemType Directory -Path $STAGE_DIR -Force | Out-Null
+# 打包根目录用 Helm/，这样解压时所有文件都在 Helm/ 文件夹下
+$PKG_DIR = Join-Path $STAGE_DIR 'Helm'
+New-Item -ItemType Directory -Path $PKG_DIR -Force | Out-Null
 Write-Ok "暂存目录: $STAGE_DIR"
 
 # ---------- 2. 收集文件 ----------
@@ -44,7 +47,7 @@ Write-Ok "暂存目录: $STAGE_DIR"
 # gateway/ — 排除 node_modules、test-*.mjs、verify-e2e.mjs、audit-log.txt
 Write-Step '收集 gateway/'
 $gwSrc = Join-Path $PROJECT_ROOT 'gateway'
-$gwDst = Join-Path $STAGE_DIR 'gateway'
+$gwDst = Join-Path $PKG_DIR 'gateway'
 New-Item -ItemType Directory -Path $gwDst -Force | Out-Null
 $gwFiles = @(
     'bridge.mjs', 'bridge-daemon.mjs', 'mcp-server.mjs', 'http-server.mjs',
@@ -63,7 +66,7 @@ foreach ($f in $gwFiles) {
 # extension/ — 完整复制
 Write-Step '收集 extension/'
 $extSrc = Join-Path $PROJECT_ROOT 'extension'
-$extDst = Join-Path $STAGE_DIR 'extension'
+$extDst = Join-Path $PKG_DIR 'extension'
 Copy-Item $extSrc $extDst -Recurse -Force
 $extCount = (Get-ChildItem $extDst -Recurse -File).Count
 Write-Ok "extension/ ($extCount 个文件)"
@@ -71,7 +74,7 @@ Write-Ok "extension/ ($extCount 个文件)"
 # install/ — 完整复制
 Write-Step '收集 install/'
 $instSrc = Join-Path $PROJECT_ROOT 'install'
-$instDst = Join-Path $STAGE_DIR 'install'
+$instDst = Join-Path $PKG_DIR 'install'
 Copy-Item $instSrc $instDst -Recurse -Force
 $instCount = (Get-ChildItem $instDst -Recurse -File).Count
 Write-Ok "install/ ($instCount 个文件)"
@@ -97,7 +100,7 @@ Helm — Pilot your web v$Version
 
 问题排查：见 install\README.md
 "@
-$readmePath = Join-Path $STAGE_DIR 'README.txt'
+$readmePath = Join-Path $PKG_DIR 'README.txt'
 # 用 .NET WriteAllText 写 UTF-8 with BOM，避免 PowerShell 5.1 的 Set-Content 编码 bug
 $utf8Bom = New-Object System.Text.UTF8Encoding $true
 [System.IO.File]::WriteAllText($readmePath, $readmeContent, $utf8Bom)
@@ -106,7 +109,7 @@ Write-Ok 'README.txt'
 # ---------- 4. 打包 ZIP ----------
 Write-Step '打包 ZIP'
 if (Test-Path $ZIP_PATH) { Remove-Item $ZIP_PATH -Force }
-Compress-Archive -Path (Join-Path $STAGE_DIR '*') -DestinationPath $ZIP_PATH -CompressionLevel Optimal
+Compress-Archive -Path $PKG_DIR -DestinationPath $ZIP_PATH -CompressionLevel Optimal
 $zipSize = [math]::Round((Get-Item $ZIP_PATH).Length / 1KB, 1)
 Write-Ok "$ZIP_PATH ($zipSize KB)"
 
