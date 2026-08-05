@@ -91,12 +91,16 @@ Helm — Pilot your web v$Version
   1. 确保已安装 Node.js 18+（https://nodejs.org）
   2. 解压本压缩包到任意目录
   3. 双击 install\install.bat
-  4. 按提示完成安装（自动注册开机自启 + 加载 Chrome 扩展）
+  4. 安装器会自动完成：安装依赖 → 注册开机自启 → 启动网关 → 打开 Chrome 扩展页
+  5. 在 Chrome 扩展页中手动加载扩展（约 10 秒）：
+     a. 确认右上角"开发者模式"已开启
+     b. 点击"加载已解压的扩展程序"
+     c. 选择解压目录下的 extension 文件夹
+  6. 安装完成后，install.bat 会打印各 Agent 的 MCP 配置片段，复制到你的 Agent 配置文件中即可使用
 
-安装完成后，install.bat 会打印各 Agent 的 MCP 配置片段，
-复制到你的 Agent 配置文件中即可使用。
+注：Chrome MV3 不允许命令行自动加载扩展到已有 profile，步骤 5 需手动操作。
 
-卸载：双击 install\uninstall.bat
+卸载：双击 install\uninstall.bat（扩展需在 chrome://extensions 手动移除）
 
 问题排查：见 install\README.md
 "@

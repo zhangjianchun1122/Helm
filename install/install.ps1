@@ -200,29 +200,21 @@ if (-not $bridgeRunning) {
 
 Write-Step 5 6 '加载 Chrome 扩展'
 
-# 检测 Chrome 是否在运行
-# 注意：Get-Process chrome 可能匹配到 Chrome 后台进程（更新服务等），导致误判。
-# 用 MainWindowHandle 过滤：有主窗口的才是用户实际运行的 Chrome。
-$chromeProcs = Get-Process chrome -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 }
-if ($chromeProcs) {
-    # Chrome 正在运行 —— --load-extension 无法附加到已运行实例
-    Write-Warn 'Chrome 正在运行，无法自动附加扩展。'
-    Write-Info '两种方式手动加载（任选其一）：'
-    Write-Info ''
-    Write-Info '  方式 A（推荐）：关闭所有 Chrome 窗口后重新运行 install.bat'
-    Write-Info '  方式 B：在 Chrome 地址栏输入 chrome://extensions，开启右上角"开发者模式"，'
-    Write-Info '          点"加载已解压的扩展程序"，选择目录：'
-    Write-Info "          $EXTENSION_DIR"
-    Write-Info ''
-    Write-Info '正在为你打开 chrome://extensions ...'
-    Start-Process $chromePath 'chrome://extensions'
-} else {
-    # Chrome 未运行 —— 用 --load-extension 启动并自动加载
-    Write-Info '启动 Chrome 并加载扩展...'
-    $loadArgs = "--load-extension=`"$EXTENSION_DIR`""
-    Start-Process $chromePath $loadArgs
-    Write-Ok 'Chrome 已启动，扩展已加载'
-}
+# Chrome 的 --load-extension 参数在已有 profile 上不可靠（Chrome 150+ 会静默忽略），
+# 且无法附加到已运行的 Chrome 实例。因此统一采用引导手动加载的方式。
+# 安装器打开 chrome://extensions 页面，给出清晰步骤，用户 3 步完成。
+
+Write-Info '请在 Chrome 中手动加载扩展（约 10 秒）：'
+Write-Info ''
+Write-Info '  1. 确认右上角"开发者模式"已开启（如未开启请先打开开关）'
+Write-Info '  2. 点击"加载已解压的扩展程序"'
+Write-Info "  3. 选择目录：$EXTENSION_DIR"
+Write-Info ''
+Write-Info '正在为你打开 Chrome 扩展管理页...'
+Start-Process $chromePath 'chrome://extensions'
+
+# 给 Chrome 几秒启动
+Start-Sleep -Seconds 3
 
 # ---------- Step 6: 验证连通 ----------
 
@@ -255,12 +247,8 @@ if ($extConnected) {
     Write-Host "`n全部完成！现在可以在 ZCode / Claude Desktop / Cursor 中使用 browser-tool 工具。`n" -ForegroundColor Green
 } else {
     Write-Warn '扩展尚未连接网关'
-    if ($chromeProcs) {
-        Write-Host "  原因：Chrome 之前在运行，扩展未能自动加载。" -ForegroundColor Yellow
-        Write-Host "  请按上方提示手动加载扩展，加载后 Side Panel 显示绿色"已连接网关"即成功。" -ForegroundColor Yellow
-    } else {
-        Write-Host "  扩展可能需要几秒初始化。请打开 Chrome 扩展栏的 Helm 图标 → 侧栏，确认显示"已连接网关"。" -ForegroundColor Yellow
-    }
+    Write-Host "  请按上方 Step 5 的提示在 chrome://extensions 手动加载扩展。" -ForegroundColor Yellow
+    Write-Host "  加载后 Side Panel 显示绿色"已连接网关"即成功。" -ForegroundColor Yellow
     Write-Host ""
 }
 
