@@ -79,26 +79,28 @@ Write-Ok "install/ ($instCount 个文件)"
 # ---------- 3. 写入顶层 README.txt ----------
 Write-Step '写入 README.txt'
 $readmeContent = @"
-Helm — Pilot your web v$Version
+Helm - Pilot your web v$Version
 ================================
 
-在你的真实浏览器里让 AI 自动完成点击/输入/下载等操作。
+Let AI autonomously operate your real browser - click, type, download,
+without re-login, undetected by anti-bot systems.
 
-安装步骤：
-  1. 确保已安装 Node.js 18+（https://nodejs.org）
-  2. 解压本压缩包到任意目录
-  3. 双击 install\install.bat
-  4. 按提示完成安装（自动注册开机自启 + 加载 Chrome 扩展）
+Install:
+  1. Install Node.js 18+ (https://nodejs.org)
+  2. Extract this zip to any folder
+  3. Double-click install\install.bat
+  4. Follow the prompts (auto-start on boot + load Chrome extension)
 
-安装完成后，install.bat 会打印各 Agent 的 MCP 配置片段，
-复制到你的 Agent 配置文件中即可使用。
+After install, install.bat prints MCP config snippets for each Agent.
+Copy the snippet into your Agent's config file to start using.
 
-卸载：双击 install\uninstall.bat
+Uninstall: Double-click install\uninstall.bat
 
-问题排查：见 install\README.md
+Troubleshooting: See install\README.md
 "@
 $readmePath = Join-Path $STAGE_DIR 'README.txt'
-Set-Content -Path $readmePath -Value $readmeContent -Encoding UTF8
+# ASCII encoding to avoid garbled text on Windows Notepad
+Set-Content -Path $readmePath -Value $readmeContent -Encoding ASCII
 Write-Ok 'README.txt'
 
 # ---------- 4. 打包 ZIP ----------
