@@ -23,7 +23,7 @@ import { TOOLS, mapToolToAction, isLocalTool, isHighRisk } from './tools-def.mjs
 await startOrAttach();
 
 const PROTOCOL_VERSION = '2024-11-05';
-const SERVER_INFO = { name: 'browser-tool', version: '0.1.0' };
+const SERVER_INFO = { name: 'helm', version: '0.1.0' };
 
 // TOOLS / mapToolToAction / isLocalTool / isHighRisk 从 tools-def.mjs import（与 http-server 共享）
 
@@ -306,5 +306,5 @@ function send(obj) {
   process.stdout.write(JSON.stringify(obj) + '\n');
 }
 
-console.error('[mcp] browser-tool MCP server 已启动 (stdio)，等待 Agent 连接…');
+console.error('[mcp] helm MCP server 已启动 (stdio)，等待 Agent 连接…');
 console.error('[mcp] 网关模式由 startOrAttach 自动决定（主/附属）');

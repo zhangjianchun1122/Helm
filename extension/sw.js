@@ -638,9 +638,9 @@ async function bootstrap() {
   // 1) 最关键：点图标即开侧栏。放最前，失败也别阻断后续
   try {
     await chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true });
-    console.log('[browser-tool] setPanelBehavior ok');
+    console.log('[helm] setPanelBehavior ok');
   } catch (e) {
-    console.error('[browser-tool] setPanelBehavior 失败:', e);
+    console.error('[helm] setPanelBehavior 失败:', e);
   }
   // 2) offscreen 失败不阻断侧栏功能
   try {
@@ -649,7 +649,7 @@ async function bootstrap() {
     if (saved.pendingTabId) pendingTabId = saved.pendingTabId;
     if (saved.pendingFrameId != null) pendingFrameId = saved.pendingFrameId;
   } catch (e) {
-    console.error('[browser-tool] offscreen 失败:', e);
+    console.error('[helm] offscreen 失败:', e);
   }
 }
 
@@ -671,11 +671,11 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
 // 兜底：若 setPanelBehavior 未生效，点图标时手动开侧栏
 chrome.action.onClicked.addListener((tab) => {
   chrome.sidePanel.open({ tabId: tab.id, windowId: tab.windowId }).catch((e) => {
-    console.error('[browser-tool] sidePanel.open 失败:', e);
+    console.error('[helm] sidePanel.open 失败:', e);
   });
 });
 
 // 兜底：任何错误别让 SW 崩
 self.addEventListener('unhandledrejection', (e) => {
-  console.error('[browser-tool] unhandledrejection:', e.reason);
+  console.error('[helm] unhandledrejection:', e.reason);
 });

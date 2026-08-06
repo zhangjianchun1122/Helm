@@ -34,7 +34,7 @@
                     │ MCP stdio/HTTP        OpenAI 兼容 function-call
                     ▼
 ┌─────────────────────────────────────────────────────────────┐
-│  本地网关  browser-tool-gateway（Node）                       │
+│  本地网关  helm（Node）                       │
 │   • MCP Server（tools/list, tools/call）                     │
 │   • WebSocket 桥 ↔ 扩展                                      │
 │   • 长任务/会话/截图缓冲（MV3 SW 易回收，状态放这）           │
@@ -174,7 +174,7 @@
 ## 七、目录结构建议
 
 ```
-browser-tool/
+helm/
 ├─ docs/
 │  └─ feasibility-and-plan.md      # 本文件
 ├─ extension/                      # Chrome 扩展（MV3，站点无关）

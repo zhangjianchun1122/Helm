@@ -23,7 +23,7 @@
 ## 0. 目录结构
 
 ```
-browser-tool/
+helm/
 ├─ docs/
 │  ├─ feasibility-and-plan.md     # 可行性与方案
 │  └─ QUICKSTART.md               # 本文件
@@ -52,7 +52,7 @@ npm start            # 等价 node mcp-server.mjs
 启动后会看到：
 ```
 [bridge] 监听 ws://127.0.0.1:8787  (等待扩展连接)
-[mcp] browser-tool MCP server 已启动 (stdio)，等待 Agent 连接…
+[mcp] helm MCP server 已启动 (stdio)，等待 Agent 连接…
 ```
 
 > 注意：`npm start` 启动的是 **MCP stdio 进程**，它内部会同时起 bridge。MCP 进程是给 Agent 启动的；如果你想单独验证 bridge，可 `npm run bridge`。
@@ -73,7 +73,7 @@ npm start            # 等价 node mcp-server.mjs
 
 ## 3. 接入 Agent
 
-browser-tool 通过 MCP stdio 暴露 21 个工具，任何支持 MCP 的 Agent 均可直接接入，零代码适配。以下是已验证的 Agent 配置：
+helm 通过 MCP stdio 暴露 21 个工具，任何支持 MCP 的 Agent 均可直接接入，零代码适配。以下是已验证的 Agent 配置：
 
 > 以下配置假设网关已在运行（双击 `install/install.bat` 后自动启动，开机自启）。
 
@@ -85,10 +85,10 @@ browser-tool 通过 MCP stdio 暴露 21 个工具，任何支持 MCP 的 Agent �
 {
   "mcp": {
     "servers": {
-      "browser-tool": {
+      "helm": {
         "type": "stdio",
         "command": "node",
-        "args": ["/path/to/browser-tool/gateway/mcp-server.mjs"]
+        "args": ["/path/to/helm/gateway/mcp-server.mjs"]
       }
     }
   }
@@ -102,16 +102,16 @@ browser-tool 通过 MCP stdio 暴露 21 个工具，任何支持 MCP 的 Agent �
 ```json
 {
   "mcpServers": {
-    "browser-tool": {
+    "helm": {
       "type": "stdio",
       "command": "node",
-      "args": ["/path/to/browser-tool/gateway/mcp-server.mjs"]
+      "args": ["/path/to/helm/gateway/mcp-server.mjs"]
     }
   }
 }
 ```
 
-或用 CLI：`claude mcp add browser-tool -s user -- node /path/to/browser-tool/gateway/mcp-server.mjs`
+或用 CLI：`claude mcp add helm -s user -- node /path/to/helm/gateway/mcp-server.mjs`
 
 ### Qwen CLI
 
@@ -120,9 +120,9 @@ browser-tool 通过 MCP stdio 暴露 21 个工具，任何支持 MCP 的 Agent �
 ```json
 {
   "mcpServers": {
-    "browser-tool": {
+    "helm": {
       "command": "node",
-      "args": ["/path/to/browser-tool/gateway/mcp-server.mjs"]
+      "args": ["/path/to/helm/gateway/mcp-server.mjs"]
     }
   }
 }
@@ -134,9 +134,9 @@ browser-tool 通过 MCP stdio 暴露 21 个工具，任何支持 MCP 的 Agent �
 
 ```yaml
 mcp_servers:
-  browser-tool:
+  helm:
     command: "node"
-    args: ["/path/to/browser-tool/gateway/mcp-server.mjs"]
+    args: ["/path/to/helm/gateway/mcp-server.mjs"]
 ```
 
 ### Codex CLI (OpenAI)
@@ -144,12 +144,12 @@ mcp_servers:
 配置文件：`~/.codex/config.toml`（TOML 格式）
 
 ```toml
-[mcp_servers.browser-tool]
+[mcp_servers.helm]
 command = "node"
-args = ["/path/to/browser-tool/gateway/mcp-server.mjs"]
+args = ["/path/to/helm/gateway/mcp-server.mjs"]
 ```
 
-> 注：Codex 有内置浏览器工具，与 browser-tool 功能重叠。在 Codex 中建议使用其自带工具。
+> 注：Codex 有内置浏览器工具，与 helm 功能重叠。在 Codex 中建议使用其自带工具。
 
 ### 非 MCP 智能体 / 自研 Agent（HTTP 接入）
 
@@ -167,7 +167,7 @@ curl -X POST -H "Authorization: Bearer mykey" -H "Content-Type: application/json
 
 ### 多 Agent 共存
 
-多个 Agent 可同时使用 browser-tool：每个 Agent spawn 的 mcp-server 进程调 `startOrAttach()`，检测到 8787 被占会走**附属模式**连常驻 bridge，互不干扰。
+多个 Agent 可同时使用 helm：每个 Agent spawn 的 mcp-server 进程调 `startOrAttach()`，检测到 8787 被占会走**附属模式**连常驻 bridge，互不干扰。
 
 ---
 
@@ -176,7 +176,7 @@ curl -X POST -H "Authorization: Bearer mykey" -H "Content-Type: application/json
 在已登录任一站点的浏览器里，让 Agent 完成两件事即算通过：
 
 **测试 A — 读页面**
-> 用 browser-tool，打开当前已登录的页面，告诉我页面标题和前 5 个可点击元素。
+> 用 helm，打开当前已登录的页面，告诉我页面标题和前 5 个可点击元素。
 
 Agent 预期调用：`list_tabs` 或 `navigate` → `get_snapshot` → 汇报。
 

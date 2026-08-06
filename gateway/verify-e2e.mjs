@@ -69,7 +69,7 @@ const init = await sendMCP({
   params: { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'verify', version: '1' } },
 });
 ok('返回 protocolVersion', init?.result?.protocolVersion === '2024-11-05', JSON.stringify(init?.result));
-ok('返回 serverInfo', init?.result?.serverInfo?.name === 'browser-tool');
+ok('返回 serverInfo', init?.result?.serverInfo?.name === 'helm');
 
 console.log('\n=== B. tools/list ===');
 const list = await sendMCP({ jsonrpc: '2.0', id: 2, method: 'tools/list' });
@@ -252,7 +252,7 @@ const tmpFile = join(tmpDir, 'test.txt');
 
 // N1. save_file 写入
 const sv = await sendMCP({ jsonrpc: '2.0', id: 16, method: 'tools/call',
-  params: { name: 'save_file', arguments: { path: tmpFile, content: 'hello browser-tool\nline2' } } });
+  params: { name: 'save_file', arguments: { path: tmpFile, content: 'hello helm\nline2' } } });
 const svText = sv?.result?.content?.[0]?.text || '';
 ok('save_file 未报错', sv?.result?.isError !== true, svText.slice(0, 200));
 ok('save_file 返回 ok:true', /"ok"\s*:\s*true/.test(svText), svText.slice(0, 200));
@@ -264,7 +264,7 @@ const rf = await sendMCP({ jsonrpc: '2.0', id: 17, method: 'tools/call',
   params: { name: 'read_file', arguments: { path: tmpFile } } });
 const rfText = rf?.result?.content?.[0]?.text || '';
 ok('read_file 未报错', rf?.result?.isError !== true, rfText.slice(0, 200));
-ok('read_file 内容一致', /hello browser-tool/.test(rfText) && /line2/.test(rfText), rfText.slice(0, 200));
+ok('read_file 内容一致', /hello helm/.test(rfText) && /line2/.test(rfText), rfText.slice(0, 200));
 
 // N3. save_file append 追加
 const sv2 = await sendMCP({ jsonrpc: '2.0', id: 18, method: 'tools/call',
@@ -272,7 +272,7 @@ const sv2 = await sendMCP({ jsonrpc: '2.0', id: 18, method: 'tools/call',
 ok('save_file append 未报错', sv2?.result?.isError !== true, JSON.stringify(sv2?.result).slice(0, 200));
 const rf2 = await sendMCP({ jsonrpc: '2.0', id: 19, method: 'tools/call',
   params: { name: 'read_file', arguments: { path: tmpFile } } });
-ok('append 后含旧+新内容', /hello browser-tool/.test(rf2?.result?.content?.[0]?.text || '') && /appended/.test(rf2?.result?.content?.[0]?.text || ''), (rf2?.result?.content?.[0]?.text || '').slice(0, 200));
+ok('append 后含旧+新内容', /hello helm/.test(rf2?.result?.content?.[0]?.text || '') && /appended/.test(rf2?.result?.content?.[0]?.text || ''), (rf2?.result?.content?.[0]?.text || '').slice(0, 200));
 
 // N4. list_files 列目录
 // 多建一个子目录文件验证 recursive

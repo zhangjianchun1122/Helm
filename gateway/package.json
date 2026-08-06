@@ -1,11 +1,11 @@
 {
-  "name": "browser-tool-gateway",
+  "name": "helm",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "本地网关：把 Chrome 扩展的浏览器操作能力通过 MCP 暴露给 AI Agent",
   "bin": {
-    "browser-tool-gateway": "./mcp-server.mjs"
+    "helm": "./mcp-server.mjs"
   },
   "scripts": {
     "start": "node mcp-server.mjs",

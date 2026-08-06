@@ -244,7 +244,7 @@ Write-Ok "网关已运行 (127.0.0.1:$GATEWAY_PORT)"
 
 if ($extConnected) {
     Write-Ok '扩展已连接网关'
-    Write-Host "`n全部完成！现在可以在 ZCode / Claude Desktop / Cursor 中使用 browser-tool 工具。`n" -ForegroundColor Green
+    Write-Host "`n全部完成！现在可以在 ZCode / Claude Desktop / Cursor 中使用 Helm 工具。`n" -ForegroundColor Green
 } else {
     Write-Warn '扩展尚未连接网关'
     Write-Host "  请按上方 Step 5 的提示在 chrome://extensions 手动加载扩展。" -ForegroundColor Yellow
@@ -272,7 +272,7 @@ Write-Host @"
 {
   "mcp": {
     "servers": {
-      "browser-tool": {
+      "helm": {
         "type": "stdio",
         "command": "node",
         "args": ["$mcpScriptEsc"]
@@ -287,7 +287,7 @@ Write-Host "[Claude Code] .mcp.json 或 ~/.claude.json:" -ForegroundColor Cyan
 Write-Host @"
 {
   "mcpServers": {
-    "browser-tool": {
+    "helm": {
       "type": "stdio",
       "command": "node",
       "args": ["$mcpScriptEsc"]
@@ -301,7 +301,7 @@ Write-Host "[Qwen CLI] ~/.qwen/settings.json:" -ForegroundColor Cyan
 Write-Host @"
 {
   "mcpServers": {
-    "browser-tool": {
+    "helm": {
       "command": "node",
       "args": ["$mcpScriptEsc"]
     }
@@ -313,7 +313,7 @@ Write-Host ""
 Write-Host "[Hermes Agent] %LOCALAPPDATA%\hermes\config.yaml:" -ForegroundColor Cyan
 Write-Host @"
 mcp_servers:
-  browser-tool:
+  helm:
     command: "node"
     args: ["$mcpScript"]
 "@
@@ -321,7 +321,7 @@ Write-Host ""
 
 Write-Host "[Codex CLI] ~/.codex/config.toml:" -ForegroundColor Cyan
 Write-Host @"
-[mcp_servers.browser-tool]
+[mcp_servers.helm]
 command = "node"
 args = ["$mcpScript"]
 "@

@@ -6,7 +6,7 @@
 
 <h3>让 AI 在你真实浏览器里自主操作——点击、输入、下载，无需重登，不被识别为机器</h3>
 
-[![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-blue)](https://github.com/zhangjianchun1122/browser-tool)
+[![Platform](https://img.shields.io/badge/platform-Windows%2010%2F11-blue)](https://github.com/zhangjianchun1122/helm)
 [![Chrome](https://img.shields.io/badge/Chrome-MV3-4285F4)](https://developer.chrome.com/docs/extensions/mv3/intro/)
 [![MCP](https://img.shields.io/badge/protocol-MCP-0F766E)](https://modelcontextprotocol.io)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -109,8 +109,8 @@ mcp-server.mjs ──invoke──▶ bridge.mjs（WS :8787，常驻后台）
 ### 方式二：从源码安装
 
 ```bash
-git clone https://github.com/zhangjianchun1122/browser-tool.git
-cd browser-tool
+git clone https://github.com/zhangjianchun1122/helm.git
+cd helm
 cd gateway && npm install
 ```
 
@@ -133,10 +133,10 @@ Helm 通过 MCP stdio 暴露工具，任何支持 MCP 的 Agent 直接配置即�
 {
   "mcp": {
     "servers": {
-      "browser-tool": {
+      "helm": {
         "type": "stdio",
         "command": "node",
-        "args": ["/path/to/browser-tool/gateway/mcp-server.mjs"]
+        "args": ["/path/to/helm/gateway/mcp-server.mjs"]
       }
     }
   }
@@ -150,10 +150,10 @@ Helm 通过 MCP stdio 暴露工具，任何支持 MCP 的 Agent 直接配置即�
 ```json
 {
   "mcpServers": {
-    "browser-tool": {
+    "helm": {
       "type": "stdio",
       "command": "node",
-      "args": ["/path/to/browser-tool/gateway/mcp-server.mjs"]
+      "args": ["/path/to/helm/gateway/mcp-server.mjs"]
     }
   }
 }
@@ -166,9 +166,9 @@ Helm 通过 MCP stdio 暴露工具，任何支持 MCP 的 Agent 直接配置即�
 ```json
 {
   "mcpServers": {
-    "browser-tool": {
+    "helm": {
       "command": "node",
-      "args": ["/path/to/browser-tool/gateway/mcp-server.mjs"]
+      "args": ["/path/to/helm/gateway/mcp-server.mjs"]
     }
   }
 }
@@ -180,9 +180,9 @@ Helm 通过 MCP stdio 暴露工具，任何支持 MCP 的 Agent 直接配置即�
 
 ```yaml
 mcp_servers:
-  browser-tool:
+  helm:
     command: "node"
-    args: ["/path/to/browser-tool/gateway/mcp-server.mjs"]
+    args: ["/path/to/helm/gateway/mcp-server.mjs"]
 ```
 </details>
 
@@ -190,9 +190,9 @@ mcp_servers:
 <summary><b>Codex CLI</b> — <code>~/.codex/config.toml</code></summary>
 
 ```toml
-[mcp_servers.browser-tool]
+[mcp_servers.helm]
 command = "node"
-args = ["/path/to/browser-tool/gateway/mcp-server.mjs"]
+args = ["/path/to/helm/gateway/mcp-server.mjs"]
 ```
 > Codex 有内置浏览器工具，在 Codex 中建议使用其自带工具。
 </details>
@@ -229,7 +229,7 @@ Helm 在用户真实浏览器里操作，安全是核心关切。三层防护：
 ## 项目结构
 
 ```
-browser-tool/
+helm/
 ├─ extension/              # Chrome 扩展（MV3，站点无关）
 │  ├─ manifest.json
 │  ├─ sw.js                # Service Worker：路由调度 + chrome.debugger

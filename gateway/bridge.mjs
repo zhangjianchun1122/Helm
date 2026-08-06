@@ -15,6 +15,12 @@ import net from 'node:net';
 import { WebSocketServer, WebSocket } from 'ws';
 
 const PORT = Number(process.env.BT_PORT || 8787);
+// BT_HOST: 网关监听/连接的主机地址。默认 127.0.0.1（本机回环）。
+// 沙箱场景（如 Claude Desktop + ccswitch）：设为宿主机 LAN IP（如 192.168.x.x），
+// bridge-daemon 会监听 0.0.0.0 接受外部连接，mcp-server 用此地址连 bridge。
+const HOST = process.env.BT_HOST || '127.0.0.1';
+// 监听地址：BT_HOST 非 127.0.0.1 时监听 0.0.0.0（接受外部连接），否则监听 127.0.0.1
+const LISTEN_HOST = HOST === '127.0.0.1' ? '127.0.0.1' : '0.0.0.0';
 
 // 扩展连接（主模式持有；附属模式为 null）
 let extSocket = null;
@@ -95,7 +101,7 @@ export function invoke(action, args = {}, opts = {}) {
     // 都没有
     pending.delete(id);
     clearTimeout(timer);
-    reject(new Error('扩展未连接：请安装并加载 browser-tool 扩展，并打开 Side Panel'));
+    reject(new Error('扩展未连接：请安装并加载 Helm 扩展，并打开 Side Panel'));
   });
 }
 
@@ -126,33 +132,33 @@ export function waitForExtension(timeoutMs = 10000) {
       if (extAlive()) return resolve(true);
       const iv = setInterval(() => {
         if (extAlive()) { clearInterval(iv); clearTimeout(to); resolve(true); }
-        else if (Date.now() >= deadline) { clearInterval(iv); reject(new Error('扩展未连接：请安装并加载 browser-tool 扩展，并打开 Side Panel')); }
+        else if (Date.now() >= deadline) { clearInterval(iv); reject(new Error('扩展未连接：请安装并加载 Helm 扩展，并打开 Side Panel')); }
       }, 100);
-      const to = setTimeout(() => { clearInterval(iv); reject(new Error('扩展未连接：请安装并加载 browser-tool 扩展，并打开 Side Panel')); }, timeoutMs);
+      const to = setTimeout(() => { clearInterval(iv); reject(new Error('扩展未连接：请安装并加载 Helm 扩展，并打开 Side Panel')); }, timeoutMs);
       return;
     }
 
     // 附属模式：轮询主网关 /health
     const checkHealth = () => {
-      const req = http.get(`http://127.0.0.1:${PORT}/health`, (res) => {
+      const req = http.get(`http://${HOST}:${PORT}/health`, (res) => {
         let body = '';
         res.on('data', (c) => body += c);
         res.on('end', () => {
           let ok = false;
           try { ok = JSON.parse(body).ext === true; } catch (_) {}
           if (ok) { clearTimeout(to); resolve(true); return; }
-          if (Date.now() >= deadline) { clearTimeout(to); reject(new Error('扩展未连接：请安装并加载 browser-tool 扩展，并打开 Side Panel')); return; }
+          if (Date.now() >= deadline) { clearTimeout(to); reject(new Error('扩展未连接：请安装并加载 Helm 扩展，并打开 Side Panel')); return; }
           setTimeout(checkHealth, 500);
         });
       });
       req.on('error', () => {
-        if (Date.now() >= deadline) { clearTimeout(to); reject(new Error('扩展未连接：请安装并加载 browser-tool 扩展，并打开 Side Panel')); return; }
+        if (Date.now() >= deadline) { clearTimeout(to); reject(new Error('扩展未连接：请安装并加载 Helm 扩展，并打开 Side Panel')); return; }
         setTimeout(checkHealth, 500);
       });
       req.setTimeout(2000, () => req.destroy());
     };
     checkHealth();
-    const to = setTimeout(() => reject(new Error('扩展未连接：请安装并加载 browser-tool 扩展，并打开 Side Panel')), timeoutMs);
+    const to = setTimeout(() => reject(new Error('扩展未连接：请安装并加载 Helm 扩展，并打开 Side Panel')), timeoutMs);
   });
 }
 
@@ -262,8 +268,8 @@ function startPrimary() {
     ws.on('close', () => clearInterval(pingTimer));
   });
 
-  server.listen(PORT, '127.0.0.1', () => {
-    console.error(`[bridge] 主模式 监听 ws://127.0.0.1:${PORT} (等待扩展连接)`);
+  server.listen(PORT, LISTEN_HOST, () => {
+    console.error(`[bridge] 主模式 监听 ws://${LISTEN_HOST}:${PORT} (等待扩展连接)`);
   });
 
   setInterval(() => {
@@ -274,7 +280,7 @@ function startPrimary() {
 // ---------- 附属模式：作为 client 连主网关 ----------
 let replicaReady = null; // Promise<true> —— 附属模式 WS 连上后 resolve
 function startReplica() {
-  const url = `ws://127.0.0.1:${PORT}`;
+  const url = `ws://${HOST}:${PORT}`;
   replicaReady = new Promise((resolveReady) => {
     const connect = () => {
       upstream = new WebSocket(url);
@@ -302,7 +308,7 @@ function startReplica() {
 // ---------- 启动决策 ----------
 function checkPortInUse() {
   return new Promise((resolve) => {
-    const tester = net.createConnection({ port: PORT, host: '127.0.0.1' });
+    const tester = net.createConnection({ port: PORT, host: HOST });
     tester.once('connect', () => { tester.destroy(); resolve(true); });
     tester.once('error', () => { tester.destroy(); resolve(false); });
   });

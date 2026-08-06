@@ -5,7 +5,7 @@
 ## 快速开始
 
 1. **双击 `install.bat`** —— 完成
-2. 打开 ZCode / Claude Desktop / Cursor，即可使用 browser-tool 工具
+2. 打开 ZCode / Claude Desktop / Cursor，即可使用 helm 工具
 
 就这么简单。
 

@@ -30,6 +30,9 @@ await startOrAttach();
 
 // ---------- 配置 ----------
 const PORT = Number(process.env.HELM_HTTP_PORT || process.argv.find(a => a.startsWith('--port='))?.split('=')[1] || 8788);
+// BT_HOST 支持：沙箱场景下监听 0.0.0.0，本机场景监听 127.0.0.1
+const HOST = process.env.BT_HOST || '127.0.0.1';
+const LISTEN_HOST = HOST === '127.0.0.1' ? '127.0.0.1' : '0.0.0.0';
 let API_KEY = process.env.HELM_API_KEY || process.argv.find(a => a.startsWith('--key='))?.split('=')[1];
 if (!API_KEY) {
   API_KEY = crypto.randomBytes(12).toString('hex');
@@ -232,8 +235,8 @@ const server = http.createServer(async (req, res) => {
   res.end(JSON.stringify({ error: 'Not found' }));
 });
 
-server.listen(PORT, '127.0.0.1', () => {
-  console.error(`[http] Helm HTTP 端点已启动: http://127.0.0.1:${PORT}`);
+server.listen(PORT, LISTEN_HOST, () => {
+  console.error(`[http] Helm HTTP 端点已启动: http://${LISTEN_HOST}:${PORT}`);
   console.error(`[http]   GET  /v1/tools         工具清单`);
   console.error(`[http]   POST /v1/tools/call    执行工具`);
   console.error(`[http]   鉴权: Authorization: Bearer ${API_KEY}`);
