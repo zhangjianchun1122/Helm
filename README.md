@@ -98,13 +98,19 @@ mcp-server.mjs ──invoke──▶ bridge.mjs（WS :8787，常驻后台）
 
 ## 快速开始
 
+> **注意**：Chrome MV3 不允许命令行自动加载扩展到已有 profile，安装完成后需手动加载一次扩展（约 10 秒），详见下方步骤 4。
+
 ### 方式一：一键安装（推荐）
 
 1. 下载 [Helm-Portable-0.1.0.zip](../../releases)
 2. 解压到任意目录
 3. 双击 `install/install.bat`
+4. **手动加载 Chrome 扩展**（安装器会自动打开 `chrome://extensions` 页面）：
+   - 确认右上角「开发者模式」已开启
+   - 点击「加载已解压的扩展程序」
+   - 选择解压目录下的 `extension` 文件夹
 
-安装器自动完成：检测环境 → 安装依赖 → 注册开机自启 → 启动网关 → 加载 Chrome 扩展 → 验证连通。安装完成后会打印各 Agent 的 MCP 配置片段，复制即可使用。
+安装器自动完成：检测环境 → 安装依赖 → 注册开机自启 → 启动网关 → 打开 Chrome 扩展页 → 验证连通。安装完成后会打印各 Agent 的 MCP 配置片段，复制即可使用。
 
 ### 方式二：从源码安装
 
@@ -120,7 +126,7 @@ cd gateway && npm install
 node gateway/bridge-daemon.mjs
 ```
 
-在 Chrome `chrome://extensions` 开启开发者模式，加载 `extension/` 目录。
+同样需按上方**步骤 4** 在 Chrome 中手动加载 `extension/` 目录。
 
 ### 接入 Agent
 
