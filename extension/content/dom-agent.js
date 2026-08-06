@@ -78,12 +78,111 @@
     return true;
   }
 
+  // ---------- 智能过滤：广告/装饰元素识别 ----------
+  // 广告元素常见命名模式（类名/ID）
+  const AD_PATTERNS = [
+    /ad[s]?[-_]?/i, /advert/i, /banner/i, /sponsor/i,
+    /promo/i, /affiliate/i, /tracking/i, /analytics/i,
+    /cookie[-_]?consent/i, /cookie[-_]?banner/i,
+  ];
+
+  const AD_CLASSNAMES = [
+    'google-ad', 'adsbygoogle', 'ad-container', 'ad-wrapper',
+    'sponsor-content', 'promoted-content', 'native-ad',
+    'cookie-banner', 'cookie-consent', 'cookie-notice',
+  ];
+
+  function isAdElement(el) {
+    const id = el.id || '';
+    const className = typeof el.className === 'string' ? el.className : '';
+    const combined = `${id} ${className}`;
+
+    // 检查类名/ID 模式
+    for (const pattern of AD_PATTERNS) {
+      if (pattern.test(combined)) return true;
+    }
+
+    // 检查精确类名
+    for (const name of AD_CLASSNAMES) {
+      if (combined.includes(name)) return true;
+    }
+
+    // 检查 Google Ad iframe
+    if (el.tagName === 'IFRAME') {
+      const src = el.getAttribute('src') || '';
+      if (src.includes('google.com/ads') || src.includes('doubleclick.net')) return true;
+    }
+
+    return false;
+  }
+
+  function isDecorative(el) {
+    // aria-hidden 元素（明确标记为装饰）
+    if (el.getAttribute('aria-hidden') === 'true') return true;
+
+    // 纯装饰性图标/SVG（无文本、无 aria-label）
+    if (el.tagName === 'SVG' || el.tagName === 'IMG') {
+      const text = (el.innerText || '').trim();
+      const ariaLabel = el.getAttribute('aria-label');
+      const title = el.getAttribute('title');
+      if (!text && !ariaLabel && !title) return true;
+    }
+
+    // 固定定位的浮层（cookie 提示、通知栏），但保留导航栏
+    const style = getComputedStyle(el);
+    if (style.position === 'fixed' || style.position === 'sticky') {
+      const role = el.getAttribute('role');
+      const tagName = el.tagName.toLowerCase();
+      // 保留 nav、header、footer 等语义化标签
+      if (!role && !['nav', 'header', 'footer', 'main'].includes(tagName)) {
+        // 检查是否在顶部/底部（通常是 cookie banner）
+        const rect = el.getBoundingClientRect();
+        const viewportHeight = window.innerHeight;
+        if (rect.top < 50 || rect.bottom > viewportHeight - 50) {
+          // 高度较小的浮层更可能是提示条
+          if (rect.height < 100) return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  function smartFilter(elements) {
+    const seen = new Map();
+    const result = [];
+
+    for (const el of elements) {
+      // 基于文本+标签+垂直位置的去重（每 100px 一个区间）
+      const textKey = (el.text || '').slice(0, 50);
+      const key = `${el.tag}|${textKey}|${Math.floor(el.rect.y / 100)}`;
+
+      if (seen.has(key)) {
+        continue; // 跳过重复项
+      }
+
+      seen.set(key, true);
+
+      // 精简属性：移除空值
+      const cleanAttrs = {};
+      for (const [k, v] of Object.entries(el.attrs)) {
+        if (v != null && v !== '') cleanAttrs[k] = v;
+      }
+      el.attrs = cleanAttrs;
+
+      result.push(el);
+    }
+
+    return result;
+  }
+
   // ---------- snapshot：把页面简化成 ref 树 ----------
   function buildSnapshot(options = {}) {
-    const { interactiveOnly = true } = options;
+    const { interactiveOnly = true, filterLevel = 'basic' } = options;
     const root = document.body || document.documentElement;
     const out = [];
     const stack = [[root, 0]];
+    let filteredCount = 0;
 
     while (stack.length) {
       const [el, depth] = stack.pop();
@@ -91,6 +190,14 @@
 
       const include = interactiveOnly ? isInteractive(el) : true;
       if (include && isVisible(el)) {
+        // 智能过滤：basic 和 smart 模式过滤广告/装饰元素
+        if (filterLevel !== 'none') {
+          if (isAdElement(el) || isDecorative(el)) {
+            filteredCount++;
+            continue;
+          }
+        }
+
         const ref = ensureRef(el);
         out.push(describe(el, ref, depth));
       }
@@ -102,12 +209,17 @@
       }
     }
 
+    // smart 模式：后处理去重和精简
+    const finalElements = filterLevel === 'smart' ? smartFilter(out) : out;
+
     return {
       url: location.href,
       title: document.title,
       frameUrl: location.href,
-      elementCount: out.length,
-      elements: out,
+      elementCount: finalElements.length,
+      elements: finalElements,
+      filterLevel,
+      filteredCount, // 被过滤的元素数量（不含 smart 去重）
     };
   }
 

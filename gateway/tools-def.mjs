@@ -35,6 +35,12 @@ export const TOOLS = [
       properties: {
         frameId: { type: 'integer', description: '目标 iframe 的 frameId；省略则作用于主文档' },
         interactiveOnly: { type: 'boolean', default: true, description: '是否只返回可交互元素' },
+        filterLevel: {
+          type: 'string',
+          enum: ['none', 'basic', 'smart'],
+          default: 'basic',
+          description: '过滤级别：none=不过滤，basic=过滤广告/装饰元素（默认），smart=基础过滤+智能去重（更省 token）'
+        },
       },
     },
   },
@@ -263,7 +269,7 @@ export function mapToolToAction(name, args) {
     case 'navigate':      return ['navigate', { url: rest.url }, opts];
     case 'list_tabs':     return ['listTabs', {}, opts];
     case 'list_frames':   return ['listFrames', {}, opts];
-    case 'get_snapshot':  return ['snapshot', { options: { interactiveOnly: rest.interactiveOnly ?? true } }, opts];
+    case 'get_snapshot':  return ['snapshot', { options: { interactiveOnly: rest.interactiveOnly ?? true, filterLevel: rest.filterLevel ?? 'basic' } }, opts];
     case 'click':         return ['click', { ref: rest.ref, button: rest.button || 'left' }, opts];
     case 'right_click':   return ['rightClick', { ref: rest.ref }, opts];
     case 'fill':          return ['fill', { ref: rest.ref, value: rest.value }, opts];
