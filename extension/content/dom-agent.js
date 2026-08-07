@@ -329,8 +329,9 @@
     if (!siteRules || !siteRules.adLabelInParent) return false;
     
     // 向上查找父元素，检查是否是广告容器
+    // 搜索范围扩大到"卡片级别"（200-600px 宽，300-800px 高）
     let parent = el.parentElement;
-    for (let i = 0; i < 10 && parent; i++) {
+    for (let i = 0; i < 15 && parent; i++) {
       // 如果已经检查过，直接返回结果
       if (adContainerCache.has(parent)) return true;
       if (nonAdContainerCache.has(parent)) {
@@ -339,8 +340,8 @@
       }
       
       const rect = parent.getBoundingClientRect();
-      // 广告容器通常是商品卡片大小（100-500px）
-      if (rect.width >= 100 && rect.width <= 500 && rect.height >= 100 && rect.height <= 500) {
+      // 卡片级别容器：200-600px 宽，300-800px 高
+      if (rect.width >= 200 && rect.width <= 600 && rect.height >= 300 && rect.height <= 800) {
         // 检查容器内是否有广告标签
         const descendants = parent.querySelectorAll('*');
         let isAdContainer = false;
