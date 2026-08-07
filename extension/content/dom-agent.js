@@ -95,35 +95,43 @@
   // 站点特定广告模式
   const SITE_SPECIFIC_RULES = {
     'baidu.com': {
-      selectors: ['.ec_wise_ad', '[data-tuiguang]', '.ec_tuiguang', '.c-span-last'],
+      containerSelectors: ['.EC_result', '[data-lp]'],
+      labelSelectors: ['.ec-tuiguang', '.ecfc-tuiguang'],
       textPatterns: [/^广告$/, /^推广$/],
     },
     'taobao.com': {
-      selectors: ['.tbads', '[data-promotion]', '.J_promotion', '.J_MouserOnver498'],
+      containerSelectors: ['.tbads', '[data-promotion]'],
+      labelSelectors: [],
       textPatterns: [/^广告$/, /^推广$/],
     },
     'tmall.com': {
-      selectors: ['.tbads', '[data-promotion]', '.J_promotion'],
+      containerSelectors: ['.tbads', '[data-promotion]'],
+      labelSelectors: [],
       textPatterns: [/^广告$/, /^推广$/],
     },
     'jd.com': {
-      selectors: ['.p-promotion', '[data-promotion]', '.shopSign'],
+      containerSelectors: ['.p-promotion', '[data-promotion]'],
+      labelSelectors: [],
       textPatterns: [/^广告$/, /^推广$/],
     },
     'zhihu.com': {
-      selectors: ['.AdblockBanner', '.is-promotion', '.Pc-card'],
+      containerSelectors: ['.AdblockBanner', '.is-promotion', '.Pc-card'],
+      labelSelectors: [],
       textPatterns: [/^广告$/, /^推广$/],
     },
     'weibo.com': {
-      selectors: ['.WB_feed_ad', '.card-wrap-ad', '.type-ad'],
+      containerSelectors: ['.WB_feed_ad', '.card-wrap-ad', '.type-ad'],
+      labelSelectors: [],
       textPatterns: [/^推荐$/, /^广告$/],
     },
     'google.com': {
-      selectors: ['[data-text-ad]', '.ads-ad', '.commercial-unit-desktop'],
+      containerSelectors: ['[data-text-ad]', '.ads-ad', '.commercial-unit-desktop'],
+      labelSelectors: [],
       textPatterns: [/^Sponsored$/, /^Ad$/],
     },
     'youtube.com': {
-      selectors: ['.video-ads', '.ad-showing', '.ytp-ad-module'],
+      containerSelectors: ['.video-ads', '.ad-showing', '.ytp-ad-module'],
+      labelSelectors: [],
       textPatterns: [/^Ad$/, /^Advertisement$/],
     },
   };
@@ -179,16 +187,21 @@
     // 检查站点特定规则
     const siteRules = getSiteRules();
     if (siteRules) {
-      // 检查选择器
-      for (const selector of siteRules.selectors) {
+      // 检查容器选择器（整个广告块）
+      for (const selector of siteRules.containerSelectors || []) {
         try {
           if (el.matches(selector)) return true;
-          // 也检查子元素是否匹配（父容器包含广告）
-          if (el.querySelector(selector)) {
-            // 只有当元素本身较小或就是广告容器时才过滤
-            const rect = el.getBoundingClientRect();
-            if (rect.height < 200 && rect.width < 400) return true;
-          }
+          // 检查是否在广告容器内部
+          if (el.closest(selector)) return true;
+        } catch (e) {
+          // 选择器语法错误，跳过
+        }
+      }
+
+      // 检查标签选择器（广告标签如"广告"文字）
+      for (const selector of siteRules.labelSelectors || []) {
+        try {
+          if (el.matches(selector)) return true;
         } catch (e) {
           // 选择器语法错误，跳过
         }
