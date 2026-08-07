@@ -92,6 +92,64 @@
     'cookie-banner', 'cookie-consent', 'cookie-notice',
   ];
 
+  // 站点特定广告模式
+  const SITE_SPECIFIC_RULES = {
+    'baidu.com': {
+      selectors: ['.ec_wise_ad', '[data-tuiguang]', '.ec_tuiguang', '.c-span-last'],
+      textPatterns: [/^广告$/, /^推广$/],
+    },
+    'taobao.com': {
+      selectors: ['.tbads', '[data-promotion]', '.J_promotion', '.J_MouserOnver498'],
+      textPatterns: [/^广告$/, /^推广$/],
+    },
+    'tmall.com': {
+      selectors: ['.tbads', '[data-promotion]', '.J_promotion'],
+      textPatterns: [/^广告$/, /^推广$/],
+    },
+    'jd.com': {
+      selectors: ['.p-promotion', '[data-promotion]', '.shopSign'],
+      textPatterns: [/^广告$/, /^推广$/],
+    },
+    'zhihu.com': {
+      selectors: ['.AdblockBanner', '.is-promotion', '.Pc-card'],
+      textPatterns: [/^广告$/, /^推广$/],
+    },
+    'weibo.com': {
+      selectors: ['.WB_feed_ad', '.card-wrap-ad', '.type-ad'],
+      textPatterns: [/^推荐$/, /^广告$/],
+    },
+    'google.com': {
+      selectors: ['[data-text-ad]', '.ads-ad', '.commercial-unit-desktop'],
+      textPatterns: [/^Sponsored$/, /^Ad$/],
+    },
+    'youtube.com': {
+      selectors: ['.video-ads', '.ad-showing', '.ytp-ad-module'],
+      textPatterns: [/^Ad$/, /^Advertisement$/],
+    },
+  };
+
+  // 通用广告属性
+  const AD_ATTRIBUTES = [
+    'data-promotion', 'data-ad', 'data-ad-client', 'data-ad-slot',
+    'data-tuiguang', 'data-za-detail-view-path-module',
+  ];
+
+  // 通用广告文本模式（中英文）
+  const AD_TEXT_PATTERNS = [
+    /^广告$/, /^推广$/, /^赞助$/, /^推荐$/,
+    /^Ad$/, /^Sponsored$/, /^Promoted$/, /^Advertisement$/,
+  ];
+
+  function getSiteRules() {
+    const hostname = location.hostname;
+    for (const [domain, rules] of Object.entries(SITE_SPECIFIC_RULES)) {
+      if (hostname.includes(domain)) {
+        return rules;
+      }
+    }
+    return null;
+  }
+
   function isAdElement(el) {
     const id = el.id || '';
     const className = typeof el.className === 'string' ? el.className : '';
@@ -111,6 +169,45 @@
     if (el.tagName === 'IFRAME') {
       const src = el.getAttribute('src') || '';
       if (src.includes('google.com/ads') || src.includes('doubleclick.net')) return true;
+    }
+
+    // 检查通用广告属性
+    for (const attr of AD_ATTRIBUTES) {
+      if (el.hasAttribute(attr)) return true;
+    }
+
+    // 检查站点特定规则
+    const siteRules = getSiteRules();
+    if (siteRules) {
+      // 检查选择器
+      for (const selector of siteRules.selectors) {
+        try {
+          if (el.matches(selector)) return true;
+          // 也检查子元素是否匹配（父容器包含广告）
+          if (el.querySelector(selector)) {
+            // 只有当元素本身较小或就是广告容器时才过滤
+            const rect = el.getBoundingClientRect();
+            if (rect.height < 200 && rect.width < 400) return true;
+          }
+        } catch (e) {
+          // 选择器语法错误，跳过
+        }
+      }
+
+      // 检查站点特定文本模式
+      const text = (el.innerText || el.textContent || '').trim();
+      for (const pattern of siteRules.textPatterns) {
+        if (pattern.test(text)) return true;
+      }
+    }
+
+    // 检查通用广告文本（只检查小元素，避免误判大容器）
+    const rect = el.getBoundingClientRect();
+    if (rect.height < 50 && rect.width < 200) {
+      const text = (el.innerText || el.textContent || '').trim();
+      for (const pattern of AD_TEXT_PATTERNS) {
+        if (pattern.test(text)) return true;
+      }
     }
 
     return false;
