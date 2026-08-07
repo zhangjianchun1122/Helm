@@ -320,6 +320,57 @@
     return result;
   }
 
+  // 检查元素是否在广告容器内部（用于 adLabelInParent 机制）
+  // 使用缓存避免重复检查
+  const adContainerCache = new WeakSet();
+  const nonAdContainerCache = new WeakSet();
+  
+  function isInsideAdContainer(el, siteRules) {
+    if (!siteRules || !siteRules.adLabelInParent) return false;
+    
+    // 向上查找父元素，检查是否是广告容器
+    let parent = el.parentElement;
+    for (let i = 0; i < 10 && parent; i++) {
+      // 如果已经检查过，直接返回结果
+      if (adContainerCache.has(parent)) return true;
+      if (nonAdContainerCache.has(parent)) {
+        parent = parent.parentElement;
+        continue;
+      }
+      
+      const rect = parent.getBoundingClientRect();
+      // 广告容器通常是商品卡片大小（100-500px）
+      if (rect.width >= 100 && rect.width <= 500 && rect.height >= 100 && rect.height <= 500) {
+        // 检查容器内是否有广告标签
+        const descendants = parent.querySelectorAll('*');
+        let isAdContainer = false;
+        for (const desc of descendants) {
+          const descRect = desc.getBoundingClientRect();
+          // 广告标签通常很小（< 60px 宽，< 30px 高）
+          if (descRect.width > 0 && descRect.width < 60 && descRect.height > 0 && descRect.height < 30) {
+            const descText = (desc.innerText || desc.textContent || '').trim();
+            for (const pattern of siteRules.textPatterns) {
+              if (pattern.test(descText)) {
+                isAdContainer = true;
+                break;
+              }
+            }
+          }
+          if (isAdContainer) break;
+        }
+        
+        if (isAdContainer) {
+          adContainerCache.add(parent);
+          return true;
+        } else {
+          nonAdContainerCache.add(parent);
+        }
+      }
+      parent = parent.parentElement;
+    }
+    return false;
+  }
+
   // ---------- snapshot：把页面简化成 ref 树 ----------
   function buildSnapshot(options = {}) {
     const { interactiveOnly = true, filterLevel = 'basic' } = options;
@@ -327,6 +378,7 @@
     const out = [];
     const stack = [[root, 0]];
     let filteredCount = 0;
+    const siteRules = filterLevel !== 'none' ? getSiteRules() : null;
 
     while (stack.length) {
       const [el, depth] = stack.pop();
@@ -337,6 +389,11 @@
         // 智能过滤：basic 和 smart 模式过滤广告/装饰元素
         if (filterLevel !== 'none') {
           if (isAdElement(el) || isDecorative(el)) {
+            filteredCount++;
+            continue;
+          }
+          // 检查是否在广告容器内部（adLabelInParent 机制）
+          if (isInsideAdContainer(el, siteRules)) {
             filteredCount++;
             continue;
           }
