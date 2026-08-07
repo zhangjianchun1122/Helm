@@ -93,6 +93,10 @@
   ];
 
   // 站点特定广告模式
+  // containerSelectors: 广告容器选择器（整个广告块）
+  // labelSelectors: 广告标签选择器（"广告"文字的小元素）
+  // textPatterns: 广告文本模式
+  // adLabelInParent: 如果子元素包含广告文本，则父容器是广告
   const SITE_SPECIFIC_RULES = {
     'baidu.com': {
       containerSelectors: ['.EC_result', '[data-lp]'],
@@ -100,39 +104,48 @@
       textPatterns: [/^广告$/, /^推广$/],
     },
     'taobao.com': {
-      containerSelectors: ['.tbads', '[data-promotion]'],
+      // 淘宝使用动态类名，依赖文本匹配
+      containerSelectors: [],
       labelSelectors: [],
       textPatterns: [/^广告$/, /^推广$/],
+      adLabelInParent: true, // 子元素有"广告"文本 → 父容器是广告
     },
     'tmall.com': {
-      containerSelectors: ['.tbads', '[data-promotion]'],
+      containerSelectors: [],
       labelSelectors: [],
       textPatterns: [/^广告$/, /^推广$/],
+      adLabelInParent: true,
     },
     'jd.com': {
-      containerSelectors: ['.p-promotion', '[data-promotion]'],
+      // 京东广告标签类名动态生成（如 _ad_xxx），但"广告"文本稳定
+      containerSelectors: [],
       labelSelectors: [],
-      textPatterns: [/^广告$/, /^推广$/],
+      textPatterns: [/^广告$/],
+      adLabelInParent: true,
     },
     'zhihu.com': {
-      containerSelectors: ['.AdblockBanner', '.is-promotion', '.Pc-card'],
+      // 知乎使用动态类名
+      containerSelectors: ['.AdblockBanner', '.is-promotion'],
       labelSelectors: [],
-      textPatterns: [/^广告$/, /^推广$/],
+      textPatterns: [/^广告$/, /^推广$/, /^知乎精选$/],
+      adLabelInParent: true,
     },
     'weibo.com': {
-      containerSelectors: ['.WB_feed_ad', '.card-wrap-ad', '.type-ad'],
+      // 微博使用 CSS-in-JS 动态类名
+      containerSelectors: [],
       labelSelectors: [],
-      textPatterns: [/^推荐$/, /^广告$/],
+      textPatterns: [/^推荐$/, /^广告$/, /^推广$/],
+      adLabelInParent: true,
     },
     'google.com': {
-      containerSelectors: ['[data-text-ad]', '.ads-ad', '.commercial-unit-desktop'],
+      containerSelectors: ['[data-text-ad]', '.commercial-unit-desktop-top', '.commercial-unit-desktop-side'],
       labelSelectors: [],
-      textPatterns: [/^Sponsored$/, /^Ad$/],
+      textPatterns: [/^Sponsored$/, /^Ad$/, /^广告$/],
     },
     'youtube.com': {
-      containerSelectors: ['.video-ads', '.ad-showing', '.ytp-ad-module'],
+      containerSelectors: ['.video-ads', '.ad-showing', '.ytp-ad-module', '.ytp-ad-overlay-container'],
       labelSelectors: [],
-      textPatterns: [/^Ad$/, /^Advertisement$/],
+      textPatterns: [/^Ad$/, /^Advertisement$/, /^跳过广告$/],
     },
   };
 
@@ -211,6 +224,27 @@
       const text = (el.innerText || el.textContent || '').trim();
       for (const pattern of siteRules.textPatterns) {
         if (pattern.test(text)) return true;
+      }
+
+      // adLabelInParent: 如果子元素包含广告文本，则当前元素是广告容器
+      // 适用于京东/淘宝/微博等使用动态类名的网站
+      if (siteRules.adLabelInParent) {
+        const rect = el.getBoundingClientRect();
+        // 只检查合理大小的容器（商品卡片通常 150-400px）
+        if (rect.width >= 100 && rect.width <= 500 && rect.height >= 100 && rect.height <= 500) {
+          // 查找直接子元素中是否有广告标签
+          const children = el.querySelectorAll('*');
+          for (const child of children) {
+            const childRect = child.getBoundingClientRect();
+            // 广告标签通常很小（< 60px 宽，< 30px 高）
+            if (childRect.width > 0 && childRect.width < 60 && childRect.height > 0 && childRect.height < 30) {
+              const childText = (child.innerText || child.textContent || '').trim();
+              for (const pattern of siteRules.textPatterns) {
+                if (pattern.test(childText)) return true;
+              }
+            }
+          }
+        }
       }
     }
 
