@@ -5,6 +5,11 @@
  * 包含：TOOLS 数组（名称+描述+JSON Schema）、mapToolToAction（MCP工具名→扩展action映射）。
  */
 
+// 从环境变量读取默认过滤级别，支持 HELM_FILTER_LEVEL=none|basic|smart
+const VALID_FILTER_LEVELS = ['none', 'basic', 'smart'];
+const envFilterLevel = process.env.HELM_FILTER_LEVEL?.toLowerCase();
+const DEFAULT_FILTER_LEVEL = VALID_FILTER_LEVELS.includes(envFilterLevel) ? envFilterLevel : 'basic';
+
 export const TOOLS = [
   {
     name: 'navigate',
@@ -38,8 +43,8 @@ export const TOOLS = [
         filterLevel: {
           type: 'string',
           enum: ['none', 'basic', 'smart'],
-          default: 'basic',
-          description: '过滤级别：none=不过滤，basic=过滤广告/装饰元素（默认），smart=基础过滤+智能去重（更省 token）'
+          default: DEFAULT_FILTER_LEVEL,
+          description: `过滤级别：none=不过滤，basic=过滤广告/装饰元素，smart=基础过滤+智能去重（更省 token）。默认值: ${DEFAULT_FILTER_LEVEL}（可通过环境变量 HELM_FILTER_LEVEL 配置）`
         },
       },
     },
@@ -269,7 +274,7 @@ export function mapToolToAction(name, args) {
     case 'navigate':      return ['navigate', { url: rest.url }, opts];
     case 'list_tabs':     return ['listTabs', {}, opts];
     case 'list_frames':   return ['listFrames', {}, opts];
-    case 'get_snapshot':  return ['snapshot', { options: { interactiveOnly: rest.interactiveOnly ?? true, filterLevel: rest.filterLevel ?? 'basic' } }, opts];
+    case 'get_snapshot':  return ['snapshot', { options: { interactiveOnly: rest.interactiveOnly ?? true, filterLevel: rest.filterLevel ?? DEFAULT_FILTER_LEVEL } }, opts];
     case 'click':         return ['click', { ref: rest.ref, button: rest.button || 'left' }, opts];
     case 'right_click':   return ['rightClick', { ref: rest.ref }, opts];
     case 'fill':          return ['fill', { ref: rest.ref, value: rest.value }, opts];
