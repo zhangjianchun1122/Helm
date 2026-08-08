@@ -192,22 +192,13 @@ async function handleAction(req) {
   const t0 = Date.now();
   broadcastAction('start', { action, args: summarizeArgs(args) });
 
-  // 高危动作确认：默认信任智能体的授权决策，不拦截。
-  // 仅当 confirmHighRisk 开关开启时（谨慎用户兜底），才走 Side Panel 确认。
-  // 审计日志始终记录高危操作（在 handleActionInner 后追加）。
+  // 高危动作评估（仅用于审计日志，不再在此处拦截）
+  // 权限检查已移至 MCP server / HTTP server 层，通过智能体对话确认
   const risk = assessRisk(action, args);
-  if (risk && getConfirmHighRisk()) {
-    const decision = await requestConfirmation(action, summarizeArgs(args), risk);
-    if (!decision.approved) {
-      broadcastAction('end', { action, ok: false, durationMs: Date.now() - t0,
-        error: `用户拒绝/超时：${decision.reason || '未放行'}` });
-      throw new Error(`高危动作被拒：${action}（${risk.reason}）${decision.reason ? '— ' + decision.reason : ''}`);
-    }
-  }
 
   try {
     const data = await handleActionInner(req);
-    // 审计日志：高危操作始终记录（不论 confirm 开关是否开启）
+    // 审计日志：高危操作始终记录
     if (risk) {
       auditLog(action, args, true, Date.now() - t0, summarizeResult(action, data));
     }
@@ -223,26 +214,6 @@ async function handleAction(req) {
     throw e;
   }
 }
-
-// ---------- 高危确认开关 ----------
-// 默认 false（信任智能体授权）；Side Panel 可切换开启（谨慎兜底）
-// 持久化到 chrome.storage.local
-let _confirmHighRisk = false;
-async function loadConfirmSetting() {
-  try {
-    const v = await chrome.storage.local.get('confirmHighRisk');
-    _confirmHighRisk = !!v.confirmHighRisk;
-  } catch (_) {}
-}
-function getConfirmHighRisk() { return _confirmHighRisk; }
-// Side Panel 通过消息切换开关
-chrome.runtime.onMessage.addListener((msg) => {
-  if (msg?.type === 'bt-set-confirm') {
-    _confirmHighRisk = !!msg.value;
-    chrome.storage.local.set({ confirmHighRisk: _confirmHighRisk });
-  }
-});
-loadConfirmSetting();
 
 // ---------- 审计日志 ----------
 // 高危操作始终记录到固定日志文件，供事后追溯。
@@ -277,39 +248,6 @@ function assessRisk(action, args = {}) {
   // fill 密码字段
   if (action === 'fill' && args.ref) return null; // fill ref 无法判断是否密码字段，暂不算高危
   return null;
-}
-
-// ---------- 确认请求/响应 ----------
-let confirmId = 1;
-const pendingConfirms = new Map(); // id -> {resolve, timer}
-
-function requestConfirmation(action, args, risk) {
-  return new Promise((resolve) => {
-    const id = confirmId++;
-    const timeoutMs = 30000;
-    const timer = setTimeout(() => {
-      pendingConfirms.delete(id);
-      resolve({ approved: false, reason: '确认超时（30s 未响应）' });
-    }, timeoutMs);
-    pendingConfirms.set(id, { resolve, timer });
-    // 广播给 side panel
-    broadcastConfirm({ id, action, args, reason: risk.reason, detail: risk.detail, timeoutMs });
-  });
-}
-
-function broadcastConfirm(info) {
-  try {
-    chrome.runtime.sendMessage({ type: 'bt-confirm', phase: 'request', ...info }).catch(() => {});
-  } catch (_) {}
-}
-
-// side panel 回传确认响应（放行/拒绝）
-function handleConfirmResponse(msg) {
-  const entry = pendingConfirms.get(msg.id);
-  if (!entry) return;
-  pendingConfirms.delete(msg.id);
-  clearTimeout(entry.timer);
-  entry.resolve({ approved: msg.approved, reason: msg.reason || (msg.approved ? '已放行' : '已拒绝') });
 }
 
 // 结果摘要：screenshot 等大结果截断
@@ -609,11 +547,6 @@ async function evalViaMainWorld(code, arg, { frameId, tabIdHint } = {}) {
 // 注意 onMessage 回调里要做异步处理，必须 return true 才能保持 sendResponse 可用。
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (!msg) return;
-  // side panel 回传确认响应（放行/拒绝）
-  if (msg.type === 'bt-confirm-response') {
-    handleConfirmResponse(msg);
-    return; // 无需回包
-  }
   if (msg.type !== 'bt-invoke') return; // 忽略非本扩展 invoke 消息（如 sidepanel 的 bt-action）
   // 异步处理
   (async () => {

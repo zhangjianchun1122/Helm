@@ -145,69 +145,8 @@ chrome.runtime.onMessage.addListener((m) => {
     } else if (m.phase === 'end') {
       completeAction(m.action, m.ok, m.durationMs, m.summary || m.error);
     }
-  } else if (m.type === 'bt-confirm' && m.phase === 'request') {
-    showConfirmCard(m);
   }
 });
-
-// ---------- 高危动作确认卡 ----------
-function showConfirmCard(req) {
-  const card = document.createElement('div');
-  card.className = 'card confirm';
-  card.dataset.confirmId = req.id;
-
-  const head = document.createElement('div');
-  head.className = 'card-head';
-  head.innerHTML = `<span class="icon">⚠️</span><span class="action-name">${req.action}</span><span class="risk">${req.reason}</span>`;
-  card.appendChild(head);
-
-  const detail = document.createElement('div');
-  detail.className = 'args';
-  detail.textContent = req.detail || '';
-  card.appendChild(detail);
-
-  const btns = document.createElement('div');
-  btns.style.cssText = 'display:flex;gap:8px;margin-top:8px';
-  const approve = document.createElement('button');
-  approve.textContent = '放行';
-  approve.style.cssText = 'background:var(--amber);color:#000;border:none;border-radius:4px;padding:4px 16px;font-size:12px;cursor:pointer;font-weight:600';
-  const reject = document.createElement('button');
-  reject.textContent = '拒绝';
-  reject.style.cssText = 'background:var(--err);color:#fff;border:none;border-radius:4px;padding:4px 16px;font-size:12px;cursor:pointer';
-  btns.appendChild(reject);
-  btns.appendChild(approve);
-  card.appendChild(btns);
-
-  // 倒计时
-  const timer = document.createElement('div');
-  timer.className = 'duration';
-  timer.textContent = '30s';
-  card.querySelector('.card-head').appendChild(timer);
-  let remaining = Math.floor(req.timeoutMs / 1000);
-  const iv = setInterval(() => {
-    remaining--;
-    if (remaining <= 0) { clearInterval(iv); return; }
-    timer.textContent = remaining + 's';
-  }, 1000);
-
-  const respond = (approved) => {
-    clearInterval(iv);
-    card.remove();
-    if ($empty && $flow.children.length === 0) $empty.style.display = '';
-    chrome.runtime.sendMessage({
-      type: 'bt-confirm-response',
-      id: req.id,
-      approved,
-      reason: approved ? '用户放行' : '用户拒绝',
-    }).catch(() => {});
-  };
-  approve.addEventListener('click', () => respond(true));
-  reject.addEventListener('click', () => respond(false));
-
-  $flow.appendChild(card);
-  if ($empty) $empty.style.display = 'none';
-  if (autoScroll) $flow.scrollTop = $flow.scrollHeight;
-}
 
 // 清空
 $clear.addEventListener('click', () => {
