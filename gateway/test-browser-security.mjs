@@ -94,7 +94,11 @@ try {
   const httpSnapshot = await httpCall('get_snapshot', { interactiveOnly: false, maxElements: 500 });
   assertNoCanary(httpSnapshot, 'HTTP snapshot');
   if (!Array.isArray(httpSnapshot.result.elements) || httpSnapshot.result.elements.length > 500) throw new Error('HTTP snapshot budget differs from MCP');
-  if (!parsed.elements.some((item) => item.attrs?.id === 'public-button') || !httpSnapshot.result.elements.some((item) => item.attrs?.id === 'public-button')) throw new Error('MCP/HTTP snapshots do not expose the same public fixture element');
+  const mcpHasPublicButton = parsed.elements.some((item) => item.attrs?.id === 'public-button');
+  const httpHasPublicButton = httpSnapshot.result.elements.some((item) => item.attrs?.id === 'public-button');
+  if (!mcpHasPublicButton || !httpHasPublicButton) {
+    throw new Error(`MCP/HTTP snapshots do not expose the same public fixture element (MCP=${mcpHasPublicButton}, HTTP=${httpHasPublicButton})`);
+  }
   const httpFile = await httpCall('read_file', { path: privateKeyPath, maxBytes: 4096 });
   assertNoCanary(httpFile, 'HTTP read_file');
   if (!JSON.stringify(httpFile).includes('[REDACTED:PRIVATE_KEY]')) throw new Error('HTTP private key was not redacted');
