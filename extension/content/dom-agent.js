@@ -387,6 +387,7 @@
   // ---------- snapshot：把页面简化成 ref 树 ----------
   function buildSnapshot(options = {}) {
     const { interactiveOnly = true, filterLevel = 'basic' } = options;
+    const maxElements = Math.max(1, Math.min(500, Number(options.maxElements) || 500));
     const root = document.body || document.documentElement;
     const out = [];
     const stack = [[root, 0]];
@@ -394,8 +395,10 @@
     const siteRules = filterLevel !== 'none' ? getSiteRules() : null;
 
     while (stack.length) {
+      if (out.length >= maxElements) break;
       const [el, depth] = stack.pop();
       if (!el || el.nodeType !== Node.ELEMENT_NODE) continue;
+      if (window.HelmSourceGuard?.sensitivity(el) === 'omit') continue;
 
       const include = interactiveOnly ? isInteractive(el) : true;
       if (include && isVisible(el)) {
@@ -435,19 +438,22 @@
       elements: finalElements,
       filterLevel,
       filteredCount, // 被过滤的元素数量（不含 smart 去重）
+      truncated: stack.length > 0,
     };
   }
 
   function describe(el, ref, depth) {
     const rect = el.getBoundingClientRect();
     const tag = el.tagName.toLowerCase();
-    const text = (el.innerText || el.textContent || '').trim().slice(0, 160);
+    const sensitivity = window.HelmSourceGuard?.sensitivity(el);
+    const text = window.HelmSourceGuard?.safeText(el, 160) ?? (el.innerText || el.textContent || '').trim().slice(0, 160);
     const attrs = {};
     // 只收对定位有用的属性
-    for (const key of ['id', 'name', 'type', 'href', 'value', 'placeholder', 'role', 'aria-label']) {
+    for (const key of ['id', 'name', 'type', 'href', 'placeholder', 'role', 'aria-label']) {
       const v = el.getAttribute(key);
       if (v != null) attrs[key] = v;
     }
+    if (sensitivity) attrs.value = `[REDACTED:${sensitivity.toUpperCase()}]`;
     return {
       ref,
       tag,
@@ -750,10 +756,19 @@
     return out;
   }
 
-  function getText(ref) {
+  function getText(ref, options = {}) {
     const el = resolveRef(ref);
     if (!el) return { ok: false, error: `ref ${ref} 失效，请重新 get_snapshot 刷新 ref 后重试` };
-    return { ok: true, text: (el.innerText || el.textContent || '').trim() };
+    const sensitivity = window.HelmSourceGuard?.sensitivity(el);
+    if (sensitivity === 'omit') return { ok: false, error: 'HELM_SENSITIVE_ELEMENT_OMITTED' };
+    if (sensitivity) return { ok: true, text: `[REDACTED:${sensitivity.toUpperCase()}]`, sensitive: true };
+    const offset = Math.max(0, Number(options.offset) || 0);
+    const maxChars = Math.max(1, Math.min(20000, Number(options.maxChars) || 20000));
+    const ranged = window.HelmSourceGuard?.safeTextRange(el, offset, maxChars);
+    const fallbackText = ranged ? null : (el.innerText || el.textContent || '').trim();
+    const chunk = ranged?.text ?? fallbackText.slice(offset, offset + maxChars);
+    const truncated = ranged?.hasMore ?? (offset + chunk.length < fallbackText.length);
+    return { ok: true, text: chunk, offset, charsRead: chunk.length, totalChars: ranged ? ranged.totalChars : fallbackText.length, truncated, nextOffset: truncated ? offset + chunk.length : null };
   }
 
   // ---------- 滚动 ----------
@@ -844,7 +859,7 @@
           result = doDrag(msg.fromRef, msg.toRef, msg.options || {});
           break;
         case 'getText':
-          result = getText(msg.ref);
+          result = getText(msg.ref, { offset: msg.offset, maxChars: msg.maxChars });
           break;
         case 'scroll':
           result = doScroll(msg.options || {});

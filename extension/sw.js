@@ -12,6 +12,8 @@
  * 故 offscreen↔sw 改用 sendMessage/onMessage 短消息通信。
  */
 
+importScripts('redact-lite.js');
+
 const OFFSCREEN_URL = 'offscreen.html';
 
 let pendingTabId = null;      // 当前操作目标 tab（Agent 未指定时用 activeTab）
@@ -103,7 +105,7 @@ async function dispatchToFrame(action, payload, { frameId, tabIdHint } = {}) {
     if (String(e).includes('Could not establish connection') || String(e).includes('Receiving end does not exist')) {
       await chrome.scripting.executeScript({
         target: { tabId, allFrames: resolvedFrameId == null, ...(resolvedFrameId != null ? { frameIds: [resolvedFrameId] } : {}) },
-        files: ['content/dom-agent.js'],
+        files: ['content/source-guard.js', 'content/dom-agent.js'],
       });
       const res2 = await chrome.tabs.sendMessage(tabId, msg, options);
       return unwrap(res2);
@@ -163,7 +165,7 @@ async function highlightCurrentTab(phase, label) {
     // dom-agent 可能未注入主文档，尝试注入后再发
     if (/Could not establish connection|Receiving end does not exist/.test(String(e))) {
       try {
-        await chrome.scripting.executeScript({ target: { tabId, allFrames: false }, files: ['content/dom-agent.js'] });
+        await chrome.scripting.executeScript({ target: { tabId, allFrames: false }, files: ['content/source-guard.js', 'content/dom-agent.js'] });
         await chrome.tabs.sendMessage(tabId, msg);
       } catch (_) { /* ignore */ }
     }
@@ -171,83 +173,25 @@ async function highlightCurrentTab(phase, label) {
 }
 
 // 参数摘要：截断长值，不泄露完整内容（如 base64 截图）
-function summarizeArgs(args = {}) {
-  const out = {};
-  for (const [k, v] of Object.entries(args)) {
-    if (v == null) { out[k] = v; continue; }
-    if (typeof v === 'string') {
-      out[k] = v.length > 60 ? v.slice(0, 60) + '…' : v;
-    } else if (typeof v === 'object') {
-      const s = JSON.stringify(v);
-      out[k] = s.length > 80 ? s.slice(0, 80) + '…' : s;
-    } else {
-      out[k] = v;
-    }
-  }
-  return out;
+function summarizeArgs(args = {}, action = '') {
+  return HelmRedactLite.safeDisplayArgs(action, args);
 }
 
 async function handleAction(req) {
   const { action, args = {}, frameId, tabIdHint } = req;
   const t0 = Date.now();
-  broadcastAction('start', { action, args: summarizeArgs(args) });
-
-  // 高危动作评估（仅用于审计日志，不再在此处拦截）
-  // 权限检查已移至 MCP server / HTTP server 层，通过智能体对话确认
-  const risk = assessRisk(action, args);
+  broadcastAction('start', { action, args: summarizeArgs(args, action) });
 
   try {
     const data = await handleActionInner(req);
-    // 审计日志：高危操作始终记录
-    if (risk) {
-      auditLog(action, args, true, Date.now() - t0, summarizeResult(action, data));
-    }
     broadcastAction('end', { action, ok: true, durationMs: Date.now() - t0,
       summary: summarizeResult(action, data) });
     return data;
   } catch (e) {
-    if (risk) {
-      auditLog(action, args, false, Date.now() - t0, String(e?.message || e).slice(0, 200));
-    }
     broadcastAction('end', { action, ok: false, durationMs: Date.now() - t0,
-      error: String(e?.message || e).slice(0, 200) });
+      error: HelmRedactLite.safeDisplayError(e?.message || e) });
     throw e;
   }
-}
-
-// ---------- 审计日志 ----------
-// 高危操作始终记录到固定日志文件，供事后追溯。
-// 路径：网关工作目录下的 audit-log.txt
-async function auditLog(action, args, ok, durationMs, summary) {
-  const entry = {
-    time: new Date().toISOString(),
-    action,
-    risk: assessRisk(action, args)?.reason || '',
-    args: summarizeArgs(args),
-    ok,
-    durationMs,
-    summary: typeof summary === 'string' ? summary.slice(0, 200) : JSON.stringify(summary).slice(0, 200),
-  };
-  // 通过广播让 mcp-server 的 save_file 追加审计日志（sw.js 无法直接写文件）
-  try {
-    chrome.runtime.sendMessage({ type: 'bt-audit', entry }).catch(() => {});
-  } catch (_) {}
-}
-
-// ---------- 高危动作评估 ----------
-// 返回 null 表示安全，返回 {reason} 表示高危+原因
-const RISK_ACTIONS = new Set(['download', 'downloadViaBrowser', 'eval']);
-function assessRisk(action, args = {}) {
-  if (RISK_ACTIONS.has(action)) {
-    if (action === 'download') return { reason: '下载文件到本地', detail: args.url || args.ref || '' };
-    if (action === 'downloadViaBrowser') return { reason: '浏览器下载文件', detail: args.url || '' };
-    if (action === 'eval') return { reason: '执行任意 JavaScript', detail: (args.code || '').slice(0, 60) };
-  }
-  // save_file 覆盖已有路径也算高危
-  if (action === 'save_file' && !args.append) return { reason: '覆盖写入本地文件', detail: args.path || '' };
-  // fill 密码字段
-  if (action === 'fill' && args.ref) return null; // fill ref 无法判断是否密码字段，暂不算高危
-  return null;
 }
 
 // 结果摘要：screenshot 等大结果截断
@@ -322,7 +266,7 @@ async function handleActionInner(req) {
     case 'drag':
       return dispatchToFrame('drag', { fromRef: args.fromRef, toRef: args.toRef, options: args.options }, { frameId, tabIdHint });
     case 'getText':
-      return dispatchToFrame('getText', { ref: args.ref }, { frameId, tabIdHint });
+      return dispatchToFrame('getText', { ref: args.ref, offset: args.offset, maxChars: args.maxChars }, { frameId, tabIdHint });
     case 'scroll':
       return dispatchToFrame('scroll', { options: args.options || {} }, { frameId, tabIdHint });
     case 'eval':
