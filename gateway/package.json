@@ -10,7 +10,9 @@
   "scripts": {
     "start": "node mcp-server.mjs",
     "mcp": "node mcp-server.mjs",
-    "bridge": "node bridge.mjs"
+    "bridge": "node bridge.mjs",
+    "test:security": "node --test test/security/*.test.mjs",
+    "test:security:e2e": "node test-browser-security.mjs"
   },
   "dependencies": {
     "ws": "^8.18.0"

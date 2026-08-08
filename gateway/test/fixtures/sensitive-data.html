@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>Helm Security Fixture</title></head>
+<body>
+  <main id="main">
+    <label>密码 <input id="password" type="password" value="HELM_E2E_PASSWORD_CANARY_83f19a"></label>
+    <label>OTP <input id="otp" autocomplete="one-time-code" value="654321"></label>
+    <label>普通输入 <input id="normal" value="HELM_E2E_NORMAL_INPUT_CANARY_4c27de"></label>
+    <input id="hidden-token" type="hidden" name="access_token" value="HELM_E2E_HIDDEN_TOKEN_CANARY_f03a21">
+    <button id="public-button">Public action</button>
+    <div id="sensitive-text" tabindex="0">Bearer HELM_E2E_BEARER_CANARY_96bd71</div>
+    <section data-helm-sensitive="omit"><button id="omitted">HELM_E2E_OMIT_CANARY_d5412e</button></section>
+    <section data-helm-sensitive="redact" tabindex="0">HELM_E2E_REDACT_CANARY_a821cf</section>
+    <div id="long-text" tabindex="0"></div>
+    <iframe srcdoc="<input type='password' value='HELM_E2E_IFRAME_PASSWORD_CANARY_02ce8b'>"></iframe>
+  </main>
+  <script>document.querySelector('#long-text').textContent = 'A'.repeat(250000);</script>
+</body>
+</html>
