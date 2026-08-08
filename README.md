@@ -61,9 +61,9 @@ mcp-server.mjs ──invoke──▶ bridge.mjs（WS :8787，常驻后台）
 
 **关键设计**：MV3 Service Worker 约 30s 被回收，长连接和状态放在 Offscreen Document 与网关进程里，SW 保持无状态可随时重建。多个 Agent 同时使用时，各自 spawn 的 mcp-server 走附属模式连同一个常驻 bridge，互不干扰。
 
-## 25 个工具
+## 27 个工具
 
-Helm 提供 21 个浏览器/文件操作工具和 4 个权限管理工具。
+Helm 提供 21 个浏览器/文件操作工具和 6 个权限与安全管理工具。
 
 ### 感知类
 | 工具 | 作用 |
@@ -105,6 +105,8 @@ Helm 提供 21 个浏览器/文件操作工具和 4 个权限管理工具。
 | `set_permission` | 按会话级、项目级或用户级持久授权 |
 | `get_permissions` | 查看 `eval` / `download` / `save_file` 的授权状态 |
 | `revoke_permission` | 撤销指定层级或全部层级的授权 |
+| `confirm_execution` | 用户明确同意后，单次确认参数绑定的 `eval` / `screenshot` 调用 |
+| `get_security_status` | 查看策略模式、配置哈希、检测器和脱敏计数，不返回原文 |
 
 ## 快速开始
 
@@ -238,9 +240,21 @@ Helm 在用户真实浏览器里操作，安全是核心关切。三层防护：
 |---|---|---|
 | **普通工具** | 会话内直接执行 | 页面感知、点击、输入等工具根据 Agent 任务自主执行 |
 | **高危工具授权** | `eval` / `download` / 覆盖式 `save_file` 默认拦截 | 用户可选择单次、会话级、项目级或用户级授权，并可随时撤销；`save_file` 追加模式不视为高危 |
-| **审计日志** | 所有高危操作记录 | `gateway/audit-log.txt`，JSON 格式，含时间/工具/参数/结果 |
+| **审计日志** | 统一安全审计 | `audit-log.jsonl`，固定字段 JSONL；参数先脱敏，默认不保存结果正文 |
 
 加上 Side Panel 动作流可视化 + 页面琥珀发光边框，用户随时知道 Agent 在干什么，可随时介入。HTTP 端点除 `/health` 外均需 Bearer Token 鉴权；未显式配置 `HELM_API_KEY` 时会随机生成 token。
+
+### 敏感数据保护
+
+Helm 默认使用 `balanced` 策略：密码、Cookie、Token、API Key、私钥等内容在返回 Agent 或写入审计日志前由确定性代码脱敏。`eval` 和 `screenshot` 需要用户单次确认，确认仅对同一工具、参数和逻辑请求有效 60 秒。
+
+策略文件默认位于 `%APPDATA%\Helm\security-policy.json`，也可用 `HELM_SECURITY_POLICY` 指定绝对路径。`managed` 模式下策略缺失或损坏时工具执行 fail closed，HTTP `/health` 仍可用于诊断。可调用 `get_security_status` 查看当前模式、配置哈希、检测器和累计脱敏计数，不会返回敏感原文。
+
+```bash
+cd gateway
+npm run test:security       # 安全单元、性能和策略测试
+npm run test:security:e2e   # 需 Chrome 已加载当前 extension/ 目录
+```
 
 ## 项目结构
 
@@ -257,8 +271,9 @@ helm/
 │  ├─ http-server.mjs      # HTTP 端点（非 MCP Agent 兜底）
 │  ├─ bridge.mjs           # WebSocket 桥（主/附属模式自动切换）
 │  ├─ bridge-daemon.mjs    # 常驻启动器（开机自启用）
-│  ├─ tools-def.mjs        # 25 个工具定义 + 映射（共享模块）
+│  ├─ tools-def.mjs        # 27 个工具定义 + 映射（共享模块）
 │  ├─ permissions.mjs      # 高危工具的分层授权与撤销
+│  ├─ security/            # 检测、URL 清洗、递归脱敏、统一审计与执行保护
 │  └─ start-gateway.bat    # 启动包装器
 ├─ install/                # 一键安装/卸载器
 │  ├─ install.bat / install.ps1
