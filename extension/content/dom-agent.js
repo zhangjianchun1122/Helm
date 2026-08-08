@@ -80,8 +80,11 @@
 
   // ---------- 智能过滤：广告/装饰元素识别 ----------
   // 广告元素常见命名模式（类名/ID）
+  // 注意：ad/ads 必须作为独立词段出现（前后有分隔符或位于字符串边界），
+  // 避免误判 address、add-to-cart、admin、adjust 等含 "ad" 子串的普通类名。
   const AD_PATTERNS = [
-    /ad[s]?[-_]?/i, /advert/i, /banner/i, /sponsor/i,
+    /(?:^|[-_])ads?(?:[-_]|$)/i,  // ad/ads 作为独立词段（前后有 -/_ 或位于边界）
+    /advert/i, /banner/i, /sponsor/i,
     /promo/i, /affiliate/i, /tracking/i, /analytics/i,
     /cookie[-_]?consent/i, /cookie[-_]?banner/i,
   ];
@@ -372,6 +375,15 @@
     return false;
   }
 
+  // 统计元素及其所有后代元素的数量（用于 filteredCount 精确计数）
+  function countDescendants(el) {
+    let count = 1;
+    for (const child of el.children) {
+      count += countDescendants(child);
+    }
+    return count;
+  }
+
   // ---------- snapshot：把页面简化成 ref 树 ----------
   function buildSnapshot(options = {}) {
     const { interactiveOnly = true, filterLevel = 'basic' } = options;
@@ -390,12 +402,13 @@
         // 智能过滤：basic 和 smart 模式过滤广告/装饰元素
         if (filterLevel !== 'none') {
           if (isAdElement(el) || isDecorative(el)) {
-            filteredCount++;
+            // 计入自身及所有后代（后代因 continue 不会被遍历，属于隐式过滤）
+            filteredCount += countDescendants(el);
             continue;
           }
           // 检查是否在广告容器内部（adLabelInParent 机制）
           if (isInsideAdContainer(el, siteRules)) {
-            filteredCount++;
+            filteredCount += countDescendants(el);
             continue;
           }
         }
