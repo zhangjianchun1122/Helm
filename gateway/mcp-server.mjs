@@ -18,6 +18,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { TOOLS, mapToolToAction, isLocalTool, isHighRisk } from './tools-def.mjs';
+import { checkPermission, setPermission, revokePermission, getPermissions, isHighRiskTool, allowOnce } from './permissions.mjs';
 
 // 启动/挂联网关（端口被占则自动作为附属模式连已有网关）
 await startOrAttach();
@@ -75,6 +76,10 @@ async function handleLocalTool(name, args) {
     case 'read_file':  return doReadFile(args || {});
     case 'list_files': return doListFiles(args || {});
     case 'download':   return doDownload(args || {});
+    case 'set_permission': return setPermission(args.tool, args.scope);
+    case 'get_permissions': return getPermissions();
+    case 'revoke_permission': return revokePermission(args.tool, args.scope || 'all');
+    case 'allow_once': return allowOnce(args.tool);
     default: throw new Error(`未知本地工具: ${name}`);
   }
 }
@@ -251,6 +256,32 @@ async function handleMessage(line) {
         const { name, arguments: args } = params || {};
         const tool = TOOLS.find((t) => t.name === name);
         if (!tool) return sendRpcError(id, -32602, `未知工具: ${name}`);
+
+        // 权限检查：高危工具需要用户授权
+        // 权限管理工具本身不需要权限检查
+        const isPermissionTool = name === 'set_permission' || name === 'get_permissions' || name === 'revoke_permission' || name === 'allow_once';
+        if (isHighRiskTool(name) && !isPermissionTool) {
+          // save_file 的 append 模式不算高危
+          const isSaveFileAppend = name === 'save_file' && args?.append;
+          if (!isSaveFileAppend) {
+            const permCheck = await checkPermission(name);
+            if (!permCheck.allowed) {
+              const errorMsg = `⚠️ 工具 "${name}" 需要用户授权。
+
+请使用 AskUserQuestion 询问用户是否允许使用此工具，提供以下选项：
+1. 本次允许（仅当前操作）→ 调用 allow_once(tool="${name}")
+2. 总是允许（会话级）- 当前会话内不再询问 → 调用 set_permission(tool="${name}", scope="session")
+3. 总是允许（项目级）- 当前项目所有会话不再询问 → 调用 set_permission(tool="${name}", scope="project")
+4. 总是允许（用户级）- 所有项目的所有会话不再询问 → 调用 set_permission(tool="${name}", scope="user")
+
+用户选择后，调用对应工具保存权限，然后重新调用本工具。`;
+              return send({ jsonrpc: '2.0', id, result: {
+                content: [{ type: 'text', text: errorMsg }],
+                isError: true,
+              } });
+            }
+          }
+        }
 
         // 审计日志
         const risk = isHighRisk(name, args);

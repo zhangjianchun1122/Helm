@@ -113,7 +113,7 @@ export const TOOLS = [
   },
   {
     name: 'eval',
-    description: '⚠️ 高危（执行任意 JS，使用前应向用户确认授权）。在页面（MAIN world 等价）执行任意 JS，返回序列化结果。逃生口：用于读取内部数据结构、调用隐藏 API、序列化复杂 DOM 树等。code 是函数体，可使用参数 arg。所有站点可用（经 MAIN world 注入绕过扩展 CSP）。',
+    description: '⚠️ 高危工具（执行任意 JS）。首次调用前需用户授权：若返回权限错误，请使用 AskUserQuestion 询问用户是否允许，选项包括"本次允许"和"总是允许（会话级/项目级/用户级）"。用户同意后调用 set_permission 保存权限，然后重新调用本工具。在页面（MAIN world 等价）执行任意 JS，返回序列化结果。逃生口：用于读取内部数据结构、调用隐藏 API、序列化复杂 DOM 树等。code 是函数体，可使用参数 arg。所有站点可用（经 MAIN world 注入绕过扩展 CSP）。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -208,7 +208,7 @@ export const TOOLS = [
   },
   {
     name: 'save_file',
-    description: '⚠️ 高危（写入本地文件，覆盖模式使用前应向用户确认授权）。把文本内容写到本地任意路径。append=true 时追加（追加不视为高危）。',
+    description: '⚠️ 高危工具（写入本地文件，覆盖模式）。首次调用前需用户授权：若返回权限错误，请使用 AskUserQuestion 询问用户是否允许，选项包括"本次允许"和"总是允许（会话级/项目级/用户级）"。用户同意后调用 set_permission 保存权限，然后重新调用本工具。append=true 时追加（追加不视为高危，无需授权）。把文本内容写到本地任意路径。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -246,7 +246,7 @@ export const TOOLS = [
   },
   {
     name: 'download',
-    description: '⚠️ 高危（下载文件到本地，使用前应向用户确认授权）。下载文件到本地任意路径。url 模式：网关 fetch 写盘；ref 模式：从页面元素取 href 再下载。网关 fetch 失败时自动 fallback 扩展 chrome.downloads。',
+    description: '⚠️ 高危工具（下载文件到本地）。首次调用前需用户授权：若返回权限错误，请使用 AskUserQuestion 询问用户是否允许，选项包括"本次允许"和"总是允许（会话级/项目级/用户级）"。用户同意后调用 set_permission 保存权限，然后重新调用本工具。下载文件到本地任意路径。url 模式：网关 fetch 写盘；ref 模式：从页面元素取 href 再下载。网关 fetch 失败时自动 fallback 扩展 chrome.downloads。',
     inputSchema: {
       type: 'object',
       properties: {
@@ -255,6 +255,47 @@ export const TOOLS = [
         path: { type: 'string', description: '保存路径。省略则存到 downloads/<文件名>' },
         frameId: { type: 'integer' },
       },
+    },
+  },
+  // ---------- 权限管理工具 ----------
+  {
+    name: 'set_permission',
+    description: '设置高危工具的权限。当用户选择"总是允许"时调用此工具保存权限。scope 可选：session（仅当前会话）、project（当前项目所有会话）、user（所有项目的所有会话）。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        tool: { type: 'string', description: '工具名：eval / download / save_file' },
+        scope: { type: 'string', enum: ['session', 'project', 'user'], description: '权限级别' },
+      },
+      required: ['tool', 'scope'],
+    },
+  },
+  {
+    name: 'allow_once',
+    description: '允许高危工具单次执行，执行后自动撤销权限。当用户选择"本次允许"时调用此工具。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        tool: { type: 'string', description: '工具名：eval / download / save_file' },
+      },
+      required: ['tool'],
+    },
+  },
+  {
+    name: 'get_permissions',
+    description: '获取所有高危工具的权限状态，显示哪些工具在哪些级别已授权。',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'revoke_permission',
+    description: '撤销高危工具的权限。scope 可选：session / project / user / all（撤销所有级别）。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        tool: { type: 'string', description: '工具名：eval / download / save_file' },
+        scope: { type: 'string', enum: ['session', 'project', 'user', 'all'], default: 'all', description: '权限级别，默认 all' },
+      },
+      required: ['tool'],
     },
   },
 ];
@@ -298,7 +339,9 @@ export function mapToolToAction(name, args) {
 
 // 本地工具（不经扩展 invoke）
 export function isLocalTool(name) {
-  return name === 'save_file' || name === 'read_file' || name === 'list_files' || name === 'download';
+  return name === 'save_file' || name === 'read_file' || name === 'list_files' || name === 'download'
+    || name === 'set_permission' || name === 'get_permissions' || name === 'revoke_permission'
+    || name === 'allow_once';
 }
 
 // 高危判定
