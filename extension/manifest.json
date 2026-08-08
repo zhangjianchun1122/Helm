@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Helm — Pilot your web",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "在你的真实浏览器里让 AI 自动完成点击/输入/下载等操作，不用重新登录、不被识别为机器。",
   "icons": {
     "16": "icon16.png",
