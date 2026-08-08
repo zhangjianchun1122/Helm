@@ -53,7 +53,7 @@ mcp-server.mjs ──invoke──▶ bridge.mjs（WS :8787，常驻后台）
                       ├─ offscreen.js    长连接保活
                       ├─ sw.js           路由调度 + chrome.debugger
                       ├─ dom-agent.js    DOM 探查与操作（all_frames）
-                      └─ sidepanel.js    动作流 + 高危确认 UI
+                      └─ sidepanel.js    连接状态 + 动作流 UI
                                 │
                                 ▼
                      用户真实浏览器页面
@@ -61,7 +61,9 @@ mcp-server.mjs ──invoke──▶ bridge.mjs（WS :8787，常驻后台）
 
 **关键设计**：MV3 Service Worker 约 30s 被回收，长连接和状态放在 Offscreen Document 与网关进程里，SW 保持无状态可随时重建。多个 Agent 同时使用时，各自 spawn 的 mcp-server 走附属模式连同一个常驻 bridge，互不干扰。
 
-## 21 个工具
+## 25 个工具
+
+Helm 提供 21 个浏览器/文件操作工具和 4 个权限管理工具。
 
 ### 感知类
 | 工具 | 作用 |
@@ -95,6 +97,14 @@ mcp-server.mjs ──invoke──▶ bridge.mjs（WS :8787，常驻后台）
 |---|---|
 | `download` | 下载文件（三级 fallback：网关 fetch → 扩展 chrome.downloads → 搬运） |
 | `save_file` / `read_file` / `list_files` | 本地文件读写（网关 Node fs 直写） |
+
+### 权限管理类
+| 工具 | 作用 |
+|---|---|
+| `allow_once` | 单次授权高危工具，执行后自动撤销 |
+| `set_permission` | 按会话级、项目级或用户级持久授权 |
+| `get_permissions` | 查看 `eval` / `download` / `save_file` 的授权状态 |
+| `revoke_permission` | 撤销指定层级或全部层级的授权 |
 
 ## 快速开始
 
@@ -226,11 +236,11 @@ Helm 在用户真实浏览器里操作，安全是核心关切。三层防护：
 
 | 层 | 机制 | 说明 |
 |---|---|---|
-| **Agent 会话授权** | 工具默认信任不阻塞 | 用户在会话中下达意图即隐含授权，工具自主执行 |
-| **高危动作确认** | download/eval/save_file 弹确认卡 | Side Panel 橙色卡片，30s 无响应自动拒绝（安全侧倒） |
+| **普通工具** | 会话内直接执行 | 页面感知、点击、输入等工具根据 Agent 任务自主执行 |
+| **高危工具授权** | `eval` / `download` / 覆盖式 `save_file` 默认拦截 | 用户可选择单次、会话级、项目级或用户级授权，并可随时撤销；`save_file` 追加模式不视为高危 |
 | **审计日志** | 所有高危操作记录 | `gateway/audit-log.txt`，JSON 格式，含时间/工具/参数/结果 |
 
-加上 Side Panel 动作流可视化 + 页面琥珀发光边框，用户随时知道 Agent 在干什么，可随时介入。
+加上 Side Panel 动作流可视化 + 页面琥珀发光边框，用户随时知道 Agent 在干什么，可随时介入。HTTP 端点除 `/health` 外均需 Bearer Token 鉴权；未显式配置 `HELM_API_KEY` 时会随机生成 token。
 
 ## 项目结构
 
@@ -240,14 +250,15 @@ helm/
 │  ├─ manifest.json
 │  ├─ sw.js                # Service Worker：路由调度 + chrome.debugger
 │  ├─ offscreen.js         # Offscreen Document：WebSocket 长连接保活
-│  ├─ sidepanel.js         # 动作流 + 高危确认 UI
+│  ├─ sidepanel.js         # 连接状态 + 动作流 UI
 │  └─ content/dom-agent.js # DOM 探查与操作（注入各 frame）
 ├─ gateway/                # 本地网关
 │  ├─ mcp-server.mjs       # MCP Server（stdio，主接入协议）
 │  ├─ http-server.mjs      # HTTP 端点（非 MCP Agent 兜底）
 │  ├─ bridge.mjs           # WebSocket 桥（主/附属模式自动切换）
 │  ├─ bridge-daemon.mjs    # 常驻启动器（开机自启用）
-│  ├─ tools-def.mjs        # 21 个工具定义 + 映射（共享模块）
+│  ├─ tools-def.mjs        # 25 个工具定义 + 映射（共享模块）
+│  ├─ permissions.mjs      # 高危工具的分层授权与撤销
 │  └─ start-gateway.bat    # 启动包装器
 ├─ install/                # 一键安装/卸载器
 │  ├─ install.bat / install.ps1
