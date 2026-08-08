@@ -51,7 +51,7 @@ $gwDst = Join-Path $PKG_DIR 'gateway'
 New-Item -ItemType Directory -Path $gwDst -Force | Out-Null
 $gwFiles = @(
     'bridge.mjs', 'bridge-daemon.mjs', 'mcp-server.mjs', 'http-server.mjs',
-    'tools-def.mjs', 'start-gateway.bat', 'package.json', 'package-lock.json'
+    'tools-def.mjs', 'permissions.mjs', 'start-gateway.bat', 'package.json', 'package-lock.json'
 )
 foreach ($f in $gwFiles) {
     $src = Join-Path $gwSrc $f
