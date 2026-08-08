@@ -46,6 +46,7 @@ export const TOOLS = [
           default: DEFAULT_FILTER_LEVEL,
           description: `过滤级别：none=不过滤，basic=过滤广告/装饰元素，smart=基础过滤+智能去重（更省 token）。默认值: ${DEFAULT_FILTER_LEVEL}（可通过环境变量 HELM_FILTER_LEVEL 配置）`
         },
+        maxElements: { type: 'integer', minimum: 1, maximum: 500, default: 500, description: '最多采集的元素数；扩展侧达到上限即停止遍历' },
       },
     },
   },
@@ -107,6 +108,8 @@ export const TOOLS = [
       properties: {
         ref: { type: 'string' },
         frameId: { type: 'integer' },
+        offset: { type: 'integer', minimum: 0, default: 0 },
+        maxChars: { type: 'integer', minimum: 1, maximum: 20000, default: 20000 },
       },
       required: ['ref'],
     },
@@ -120,6 +123,8 @@ export const TOOLS = [
         code: { type: 'string', description: '函数体代码，例如 "return document.title"' },
         arg: { description: '任意传参，将被序列化后传入' },
         frameId: { type: 'integer' },
+        confirmationId: { type: 'string', description: '用户确认后重试时携带的单次确认 ID' },
+        confirmationRequestId: { type: 'string', description: '首次拦截返回的逻辑 requestId，必须原样返回' },
       },
       required: ['code'],
     },
@@ -149,6 +154,8 @@ export const TOOLS = [
       properties: {
         format: { type: 'string', enum: ['png', 'jpeg'], default: 'png' },
         quality: { type: 'integer', description: 'jpeg 质量 0-100' },
+        confirmationId: { type: 'string', description: '用户确认后重试时携带的单次确认 ID' },
+        confirmationRequestId: { type: 'string', description: '首次拦截返回的逻辑 requestId，必须原样返回' },
       },
     },
   },
@@ -222,12 +229,14 @@ export const TOOLS = [
   },
   {
     name: 'read_file',
-    description: '读取本地文本文件内容。',
+    description: '分页读取本地文本文件，单次最多 1 MiB；二进制文件拒绝作为文本返回。',
     inputSchema: {
       type: 'object',
       properties: {
         path: { type: 'string' },
         encoding: { type: 'string', default: 'utf8' },
+        offset: { type: 'integer', minimum: 0, default: 0 },
+        maxBytes: { type: 'integer', minimum: 1, maximum: 1048576, default: 1048576 },
       },
       required: ['path'],
     },
@@ -298,6 +307,20 @@ export const TOOLS = [
       required: ['tool'],
     },
   },
+  {
+    name: 'confirm_execution',
+    description: '确认一个被安全策略拦截的 eval 或 screenshot 调用。仅在用户明确同意后调用；确认后将返回的 confirmationId 和 confirmationRequestId 附加到原工具的重试参数中，且仅可使用一次。',
+    inputSchema: {
+      type: 'object',
+      properties: { confirmationId: { type: 'string' } },
+      required: ['confirmationId'],
+    },
+  },
+  {
+    name: 'get_security_status',
+    description: '查看当前安全策略模式、版本、配置哈希、已启用检测器和累计脱敏计数。不返回任何被脱敏原文。',
+    inputSchema: { type: 'object', properties: {} },
+  },
 ];
 
 // ---------- MCP 工具 -> 扩展 action 映射 ----------
@@ -315,12 +338,12 @@ export function mapToolToAction(name, args) {
     case 'navigate':      return ['navigate', { url: rest.url }, opts];
     case 'list_tabs':     return ['listTabs', {}, opts];
     case 'list_frames':   return ['listFrames', {}, opts];
-    case 'get_snapshot':  return ['snapshot', { options: { interactiveOnly: rest.interactiveOnly ?? true, filterLevel: rest.filterLevel ?? DEFAULT_FILTER_LEVEL } }, opts];
+    case 'get_snapshot':  return ['snapshot', { options: { interactiveOnly: rest.interactiveOnly ?? true, filterLevel: rest.filterLevel ?? DEFAULT_FILTER_LEVEL, maxElements: rest.maxElements ?? 500 } }, opts];
     case 'click':         return ['click', { ref: rest.ref, button: rest.button || 'left' }, opts];
     case 'right_click':   return ['rightClick', { ref: rest.ref }, opts];
     case 'fill':          return ['fill', { ref: rest.ref, value: rest.value }, opts];
     case 'press':         return ['press', { key: rest.key }, opts];
-    case 'get_text':      return ['getText', { ref: rest.ref }, opts];
+    case 'get_text':      return ['getText', { ref: rest.ref, offset: rest.offset ?? 0, maxChars: rest.maxChars ?? 20000 }, opts];
     case 'eval':          return ['eval', { code: rest.code, arg: rest.arg }, opts];
     case 'wait':          return ['wait', {
       text: rest.text, textGone: rest.textGone,
@@ -341,7 +364,7 @@ export function mapToolToAction(name, args) {
 export function isLocalTool(name) {
   return name === 'save_file' || name === 'read_file' || name === 'list_files' || name === 'download'
     || name === 'set_permission' || name === 'get_permissions' || name === 'revoke_permission'
-    || name === 'allow_once';
+    || name === 'allow_once' || name === 'confirm_execution' || name === 'get_security_status';
 }
 
 // 高危判定

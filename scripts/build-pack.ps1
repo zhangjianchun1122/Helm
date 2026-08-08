@@ -51,7 +51,7 @@ $gwDst = Join-Path $PKG_DIR 'gateway'
 New-Item -ItemType Directory -Path $gwDst -Force | Out-Null
 $gwFiles = @(
     'bridge.mjs', 'bridge-daemon.mjs', 'mcp-server.mjs', 'http-server.mjs',
-    'tools-def.mjs', 'permissions.mjs', 'start-gateway.bat', 'package.json', 'package-lock.json'
+    'tools-def.mjs', 'tool-executor.mjs', 'permissions.mjs', 'start-gateway.bat', 'package.json', 'package-lock.json'
 )
 foreach ($f in $gwFiles) {
     $src = Join-Path $gwSrc $f
@@ -61,6 +61,11 @@ foreach ($f in $gwFiles) {
     } else {
         Write-Info "  ! 跳过（不存在）: $f"
     }
+}
+$securitySrc = Join-Path $gwSrc 'security'
+if (Test-Path $securitySrc) {
+    Copy-Item $securitySrc (Join-Path $gwDst 'security') -Recurse -Force
+    Write-Info "  + security/"
 }
 
 # extension/ — 完整复制
