@@ -23,6 +23,17 @@ export const TOOLS = [
     },
   },
   {
+    name: 'create_tab',
+    description: '创建新标签页并打开指定 URL（可选），返回新标签的 id/url/title。新标签页创建后自动成为目标标签，后续 navigate/click/fill 等操作默认作用在新标签上。需要保留当前页面另开任务时用本工具；在当前 tab 内跳转用 navigate。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: '目标 URL，含 http(s)://；不传则打开 about:blank 空标签' },
+        active: { type: 'boolean', default: true, description: '是否前台打开并切到新标签。传 false 则后台打开，但仍会成为操作目标' },
+      },
+    },
+  },
+  {
     name: 'list_tabs',
     description: '列出浏览器当前所有打开的 tab（含 id/url/title）。',
     inputSchema: { type: 'object', properties: {} },
@@ -148,12 +159,13 @@ export const TOOLS = [
   },
   {
     name: 'screenshot',
-    description: '截取当前 tab 可视区域的截图，返回 base64 PNG。用于视觉确认、记录操作证据。只能截可视区域（非整页），限频约 2 次/秒。',
+    description: '截取目标 tab 可视区域的截图，返回 base64 PNG。用于视觉确认、记录操作证据。目标为前台 tab 时直接截；目标在后台时会临时切到该 tab 截图再切回原 tab（约 200ms 可见闪烁，Chrome 无法截取不可见的 tab）。只能截可视区域（非整页），限频约 2 次/秒。返回的 via 字段标明实际走了哪条路径。',
     inputSchema: {
       type: 'object',
       properties: {
         format: { type: 'string', enum: ['png', 'jpeg'], default: 'png' },
         quality: { type: 'integer', description: 'jpeg 质量 0-100' },
+        tabId: { type: 'integer', description: '目标标签页 id；省略则用当前目标标签页' },
         confirmationId: { type: 'string', description: '用户确认后重试时携带的单次确认 ID' },
         confirmationRequestId: { type: 'string', description: '首次拦截返回的逻辑 requestId，必须原样返回' },
       },
@@ -186,18 +198,24 @@ export const TOOLS = [
   },
   {
     name: 'set_active_frame',
-    description: '设置后续操作的默认 iframe 作用域。传 frameId 设定；传 null/省略回到主文档。',
+    description: '设置默认 iframe 作用域。传 frameId 设定；传 null/省略回到主文档。作用域按标签页隔离——只影响目标标签页，不会泄漏到其它标签页（frameId 在别的标签页里是另一个 frame 或不存在）。',
     inputSchema: {
       type: 'object',
       properties: {
         frameId: { type: 'integer', description: 'list_frames 返回的 frameId；传 null 回到主文档' },
+        tabId: { type: 'integer', description: '设给哪个标签页；省略则用当前目标标签页' },
       },
     },
   },
   {
     name: 'get_active_frame',
-    description: '查询当前默认 frame 作用域。',
-    inputSchema: { type: 'object', properties: {} },
+    description: '查询某标签页的默认 frame 作用域。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        tabId: { type: 'integer', description: '查询哪个标签页；省略则用当前目标标签页' },
+      },
+    },
   },
   {
     name: 'drag',
@@ -263,6 +281,7 @@ export const TOOLS = [
         ref: { type: 'string', description: '页面元素 ref（与 url 二选一）' },
         path: { type: 'string', description: '保存路径。省略则存到 downloads/<文件名>' },
         frameId: { type: 'integer' },
+        tabId: { type: 'integer', description: '目标标签页 id（仅 ref 模式有意义，用于在该标签页取元素 href）；省略则用当前目标标签页' },
       },
     },
   },
@@ -325,17 +344,25 @@ export const TOOLS = [
 
 // ---------- MCP 工具 -> 扩展 action 映射 ----------
 export function mapToolToAction(name, args) {
+  // 这两个工具的 frameId 是"要设定的值"，不能被剥进 opts 当作用域。
+  // tabId 同理走 args：frame 作用域按 tab 存，需要知道设给哪个 tab。
   if (name === 'set_active_frame') {
     const a = args || {};
-    return ['setActiveFrame', { frameId: a.frameId }, {}];
+    return ['setActiveFrame', { frameId: a.frameId, tabId: a.tabId }, {}];
   }
   if (name === 'get_active_frame') {
-    return ['getActiveFrame', {}, {}];
+    const a = args || {};
+    return ['getActiveFrame', { tabId: a.tabId }, {}];
   }
-  const { frameId, ...rest } = args || {};
-  const opts = frameId != null ? { frameId } : {};
+  const { frameId, tabId, ...rest } = args || {};
+  const opts = {};
+  if (frameId != null) opts.frameId = frameId;
+  // 显式 tabId 固定单次调用的目标标签页，不依赖全局 pendingTabId：
+  // 用户中途切换标签页会触发 onActivated 重置 pendingTabId，使后续操作打到错误页面
+  if (tabId != null) opts.tabIdHint = tabId;
   switch (name) {
     case 'navigate':      return ['navigate', { url: rest.url }, opts];
+    case 'create_tab':    return ['createTab', { url: rest.url, active: rest.active }, opts];
     case 'list_tabs':     return ['listTabs', {}, opts];
     case 'list_frames':   return ['listFrames', {}, opts];
     case 'get_snapshot':  return ['snapshot', { options: { interactiveOnly: rest.interactiveOnly ?? true, filterLevel: rest.filterLevel ?? DEFAULT_FILTER_LEVEL, maxElements: rest.maxElements ?? 500 } }, opts];

@@ -64,11 +64,16 @@ async function listFiles({ dir, recursive = false }) {
   return { ok: true, dir: absolute, count: entries.length, entries };
 }
 
-async function download({ url, ref, path: savePath, frameId }) {
+// download 是本地工具，绕开 mapToolToAction，所以要自己把 tabId 转成 tabIdHint：
+// ref 模式靠一次 snapshot 取元素 href，不定位标签页就会从错误的页面上取 href。
+async function download({ url, ref, path: savePath, frameId, tabId }) {
   let targetUrl = url;
   if (!targetUrl && ref != null) {
     if (!isExtensionConnected()) await waitForExtension(10000);
-    const snap = await invoke('snapshot', { options: { interactiveOnly: true, maxElements: 500 } }, frameId != null ? { frameId } : {});
+    const opts = {};
+    if (frameId != null) opts.frameId = frameId;
+    if (tabId != null) opts.tabIdHint = tabId;
+    const snap = await invoke('snapshot', { options: { interactiveOnly: true, maxElements: 500 } }, opts);
     const element = snap?.elements?.find((item) => String(item.ref) === String(ref));
     if (!element?.attrs?.href) throw new Error(`download: ref ${ref} 无可下载 href`);
     targetUrl = new URL(element.attrs.href, snap.url).href;

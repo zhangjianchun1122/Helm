@@ -17,7 +17,10 @@ importScripts('redact-lite.js');
 const OFFSCREEN_URL = 'offscreen.html';
 
 let pendingTabId = null;      // 当前操作目标 tab（Agent 未指定时用 activeTab）
-let pendingFrameId = null;   // 当前默认 frame（Agent 用 set_active_frame 设定；未设则作用于主文档）
+// 默认 frame 按 tab 隔离：tabId -> frameId。
+// 早前是单个全局值，set_active_frame 设的 frame 会泄漏到后续显式 tabId 指向的其它标签页
+// （frame 隶属于 tab，同一个 frameId 在别的 tab 里是另一个 frame 或不存在）。
+const frameScopes = new Map();
 
 // ---------- offscreen 生命周期 ----------
 async function ensureOffscreen() {
@@ -48,26 +51,42 @@ async function resolveTabId(tabIdHint) {
   return pendingTabId;
 }
 
-// 解析目标 frame：调用方显式传的 frameId 优先；否则用 pendingFrameId（set_active_frame 设的）；都无则 null（主文档）
+// 解析目标 frame：调用方显式传的 frameId 优先；否则用该 tab 自己的 set_active_frame 设定；
+// 都无则 null（主文档）。frame 作用域按 tab 查，避免跨标签页复用别的 tab 的 frameId。
 // 注意：frameId 传 0 也合法（主文档），故用 != null 判断
-function resolveFrameId(frameIdHint) {
+function resolveFrameId(frameIdHint, tabId) {
   if (frameIdHint != null) return frameIdHint;
-  return pendingFrameId;
+  if (tabId == null) return null;
+  const scoped = frameScopes.get(tabId);
+  return scoped != null ? scoped : null;
 }
 
-async function setActiveFrame(frameId) {
+async function persistFrameScopes() {
+  await chrome.storage.session.set({ frameScopes: Object.fromEntries(frameScopes) });
+}
+
+// 设定只对某个 tab 生效的默认 frame。tabId 省略时作用于当前目标 tab。
+async function setActiveFrame(frameId, tabIdHint) {
+  const tabId = await resolveTabId(tabIdHint);
+  if (!tabId) throw new Error('set_active_frame: 无可操作的 tab');
   // frameId 传 null/undefined 表示回到主文档；list_frames 的 frameId=0 即主文档
   if (frameId == null) {
-    pendingFrameId = null;
+    frameScopes.delete(tabId);
   } else {
-    pendingFrameId = Number(frameId);
+    frameScopes.set(tabId, Number(frameId));
   }
-  await chrome.storage.session.set({ pendingFrameId });
-  return { ok: true, activeFrameId: pendingFrameId };
+  await persistFrameScopes();
+  const activeFrameId = frameScopes.has(tabId) ? frameScopes.get(tabId) : null;
+  return { ok: true, tabId, activeFrameId };
 }
 
-async function getActiveFrame() {
-  return { ok: true, activeFrameId: pendingFrameId, note: pendingFrameId == null ? '主文档（未设定活跃 frame）' : `frame #${pendingFrameId}` };
+async function getActiveFrame(tabIdHint) {
+  const tabId = await resolveTabId(tabIdHint);
+  const activeFrameId = tabId != null && frameScopes.has(tabId) ? frameScopes.get(tabId) : null;
+  return {
+    ok: true, tabId, activeFrameId,
+    note: activeFrameId == null ? '主文档（该 tab 未设定活跃 frame）' : `frame #${activeFrameId}（仅对 tab ${tabId} 生效）`,
+  };
 }
 
 // ---------- frame 解析 ----------
@@ -87,7 +106,7 @@ async function listFrames(tabId) {
 async function dispatchToFrame(action, payload, { frameId, tabIdHint } = {}) {
   const tabId = await resolveTabId(tabIdHint);
   if (!tabId) throw new Error('无可操作的 tab（请先在浏览器打开目标页面）');
-  const resolvedFrameId = resolveFrameId(frameId);
+  const resolvedFrameId = resolveFrameId(frameId, tabId);
   const msg = { target: 'dom-agent', action, ...payload };
   const options = resolvedFrameId != null ? { frameId: resolvedFrameId } : undefined;
   const unwrap = (res) => {
@@ -227,6 +246,20 @@ async function handleActionInner(req) {
       await waitTabComplete(tabId);
       return { ok: true, url: args.url, tabId };
     }
+    case 'createTab': {
+      const created = await chrome.tabs.create({
+        url: args.url || 'about:blank',
+        active: args.active !== false,
+      });
+      await waitTabComplete(created.id);
+      // 新标签立刻成为操作目标：onActivated 是异步的，且 active:false 时根本不触发，
+      // 不显式接管的话 resolveTabId 会校验旧 tab 仍存在并继续返回旧 tab
+      pendingTabId = created.id;
+      // 新 tab 在 frameScopes 里本就没有条目，无需清理
+      await chrome.storage.session.set({ pendingTabId });
+      const tab = await chrome.tabs.get(created.id);
+      return { ok: true, tabId: tab.id, url: tab.url || '', title: tab.title || '' };
+    }
     case 'listTabs': {
       const tabs = await chrome.tabs.query({});
       return tabs.map((t) => ({ id: t.id, url: t.url, title: t.title, active: t.active }));
@@ -236,9 +269,9 @@ async function handleActionInner(req) {
       return listFrames(tabId);
     }
     case 'setActiveFrame':
-      return setActiveFrame(args.frameId);
+      return setActiveFrame(args.frameId, args.tabId ?? tabIdHint);
     case 'getActiveFrame':
-      return getActiveFrame();
+      return getActiveFrame(args.tabId ?? tabIdHint);
     case 'snapshot':
       return dispatchToFrame('snapshot', { options: args.options || {} }, { frameId, tabIdHint });
     case 'click':
@@ -275,7 +308,7 @@ async function handleActionInner(req) {
     case 'wait':
       return doWait(args, { frameId, tabIdHint });
     case 'screenshot':
-      return doScreenshot(args);
+      return doScreenshot(args, { tabIdHint });
     case 'downloadViaBrowser':
       return downloadViaBrowser(args.url, args.filename);
     default:
@@ -308,16 +341,26 @@ async function sendRealRightClick(tabId, x, y) {
 
 function waitTabComplete(tabId) {
   return new Promise((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      chrome.tabs.onUpdated.removeListener(listener);
+      // 给 dom-agent 一点注入时间
+      setTimeout(resolve, 300);
+    };
     const listener = (id, info) => {
-      if (id === tabId && info.status === 'complete') {
-        chrome.tabs.onUpdated.removeListener(listener);
-        // 给 dom-agent 一点注入时间
-        setTimeout(resolve, 300);
-      }
+      if (id === tabId && info.status === 'complete') finish();
     };
     chrome.tabs.onUpdated.addListener(listener);
+    // about:blank 等瞬时完成的页面可能在挂监听前就已 complete，否则要白等满超时
+    chrome.tabs.get(tabId).then((tab) => {
+      if (tab?.status === 'complete') finish();
+    }).catch(() => finish());
     // 兜底：5s 内没等到也算完成
     setTimeout(() => {
+      if (done) return;
+      done = true;
       chrome.tabs.onUpdated.removeListener(listener);
       resolve();
     }, 5000);
@@ -360,27 +403,100 @@ async function doWait(args, { frameId, tabIdHint } = {}) {
 
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
-// ---------- screenshot：截当前 tab 可视区域 ----------
-// chrome.tabs.captureVisibleTab 是 MV3 SW 可直接用的 API，返回 base64 PNG。
-// 限制：只能截可视区域（非整页），且约 2 次/秒限频。
-async function doScreenshot(args = {}) {
-  const windowId = chrome.windows.WINDOW_ID_CURRENT;
-  const opts = { format: args.format === 'jpeg' ? 'jpeg' : 'png' };
-  if (args.format === 'jpeg' && args.quality != null) opts.quality = Math.max(0, Math.min(100, args.quality));
-  const dataUrl = await chrome.tabs.captureVisibleTab(windowId, opts);
-  if (!dataUrl) throw new Error('截图失败：captureVisibleTab 返回空');
-  // dataUrl 形如 data:image/png;base64,xxxx
-  const base64 = dataUrl.split(',', 2)[1] || dataUrl;
-  const mime = (dataUrl.match(/^data:([^;]+)/) || [])[1] || (args.format === 'jpeg' ? 'image/jpeg' : 'image/png');
-  return {
-    ok: true,
-    format: opts.format,
-    mime,
-    // 直接给 base64，Agent/网关侧自行决定如何消费（写盘/回传/丢弃）
-    dataUrl,
-    base64,
-    size: base64.length,
+// ---------- screenshot：截目标 tab ----------
+// Chrome 只提供 captureVisibleTab，它没有 tabId 参数，截的永远是"窗口里可见的那个"。
+// 早前实现只调它且传 WINDOW_ID_CURRENT，既无视 tabIdHint 也无视 pendingTabId，
+// create_tab({active:false}) 后其它工具操作后台 tab、截图却截前台，产出错图且不报错。
+//
+// 后台 tab 试过两条 CDP 方案，都不可用（Chrome 150 实测）：
+//   fromSurface:false（从渲染器视图取帧，本该不依赖可见性）→ 直接被拒：
+//     -32000 "Only screenshots from surface are allowed."
+//   fromSurface:true（默认，从系统合成表面取帧）→ 后台 tab 不在出帧，要等到它被唤醒，
+//     实测 18s 才返回，窗口最小化时干脆挂死。
+// 结论：Chrome 不存在"不让 tab 可见就能截到它"的途径。所以后台 tab 采用临时激活：
+// 切过去截完立刻切回原 tab，约 200ms，代价是一次可见的闪烁，但结果正确且可预期。
+const SHOT_TIMEOUT_MS = 5000;        // captureVisibleTab 正常在 100ms 内；最小化窗口会挂住，靠它兜底
+const SHOT_ACTIVATE_SETTLE_MS = 120; // 切换后给合成器出帧的时间
+const SHOT_ACTIVATE_RETRIES = 5;     // 首帧未就绪时重试
+
+// 临时激活期间不让 onActivated 改写操作目标：切 tab 是本次截图的副作用，
+// 不是用户切页，若被当成用户切页会把 pendingTabId 改到目标 tab 并且不再切回。
+let suppressActivationTracking = false;
+
+function withTimeout(promise, ms, message) {
+  let timer;
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(message)), ms); }),
+  ]).finally(() => clearTimeout(timer));
+}
+
+
+
+
+async function captureVisible(windowId, format, quality) {
+  const opts = { format };
+  if (format === 'jpeg' && quality != null) opts.quality = quality;
+  return withTimeout(
+    chrome.tabs.captureVisibleTab(windowId, opts),
+    SHOT_TIMEOUT_MS,
+    `截图失败：captureVisibleTab 超时（${SHOT_TIMEOUT_MS}ms）。窗口可能处于最小化状态——`
+    + 'Chrome 无法截取未在渲染的窗口，请先还原窗口再重试',
+  );
+}
+
+async function doScreenshot(args = {}, { tabIdHint } = {}) {
+  const format = args.format === 'jpeg' ? 'jpeg' : 'png';
+  const quality = args.quality != null ? Math.max(0, Math.min(100, args.quality)) : null;
+  const tabId = await resolveTabId(tabIdHint);
+  if (!tabId) throw new Error('截图失败：无可操作的 tab');
+
+  let tab;
+  try {
+    tab = await chrome.tabs.get(tabId);
+  } catch (_) {
+    throw new Error(`截图失败：tab ${tabId} 不存在（可能已被关闭）`);
+  }
+
+  const decode = (dataUrl, via, note) => {
+    if (!dataUrl) throw new Error('截图失败：captureVisibleTab 返回空');
+    const base64 = dataUrl.split(',', 2)[1] || dataUrl;
+    const mime = (dataUrl.match(/^data:([^;]+)/) || [])[1] || `image/${format}`;
+    return { ok: true, format, mime, dataUrl, base64, size: base64.length, tabId, via, note };
   };
+
+  // 目标已经是它所在窗口的可见 tab：直接截。
+  // 用 tab.windowId 而不是 WINDOW_ID_CURRENT——多窗口下"当前窗口"可能不是目标所在窗口。
+  if (tab.active) {
+    return decode(await captureVisible(tab.windowId, format, quality), 'captureVisibleTab');
+  }
+
+  // 目标在后台：临时切过去截，再切回原 tab。
+  const previousActive = (await chrome.tabs.query({ active: true, windowId: tab.windowId }))[0];
+  suppressActivationTracking = true;
+  try {
+    await chrome.tabs.update(tabId, { active: true });
+    let dataUrl = null;
+    let lastError = null;
+    // 刚切过去时合成器可能还没出首帧，captureVisibleTab 会报 not ready，重试几次
+    for (let i = 0; i < SHOT_ACTIVATE_RETRIES && !dataUrl; i++) {
+      await sleep(SHOT_ACTIVATE_SETTLE_MS);
+      try {
+        dataUrl = await captureVisible(tab.windowId, format, quality);
+      } catch (e) {
+        lastError = e;
+      }
+    }
+    if (!dataUrl) throw lastError || new Error('截图失败：临时激活后仍未取到帧');
+    return decode(dataUrl, 'activate+captureVisibleTab',
+      '目标在后台，已临时切到该标签页截图并切回原标签页');
+  } finally {
+    // 必须切回：否则用户看到的页面被我们悄悄换掉了
+    if (previousActive?.id != null && previousActive.id !== tabId) {
+      try { await chrome.tabs.update(previousActive.id, { active: true }); } catch (_) { /* ignore */ }
+    }
+    suppressActivationTracking = false;
+  }
 }
 
 // ---------- downloadViaBrowser：用浏览器网络下载（fallback 网关 fetch） ----------
@@ -440,7 +556,7 @@ async function downloadViaBrowser(url, filename) {
 async function evalViaMainWorld(code, arg, { frameId, tabIdHint } = {}) {
   const tabId = await resolveTabId(tabIdHint);
   if (!tabId) throw new Error('无可操作的 tab');
-  const resolvedFrameId = resolveFrameId(frameId);
+  const resolvedFrameId = resolveFrameId(frameId, tabId);
   const target = { tabId };
   if (resolvedFrameId != null) target.frameIds = [resolvedFrameId];
   else target.allFrames = true;
@@ -522,18 +638,23 @@ async function bootstrap() {
   // 2) offscreen 失败不阻断侧栏功能
   try {
     await ensureOffscreen();
-    const saved = await chrome.storage.session.get(['pendingTabId', 'pendingFrameId']);
+    const saved = await chrome.storage.session.get(['pendingTabId', 'frameScopes']);
     if (saved.pendingTabId) pendingTabId = saved.pendingTabId;
-    if (saved.pendingFrameId != null) pendingFrameId = saved.pendingFrameId;
+    frameScopes.clear();
+    for (const [tabId, frameId] of Object.entries(saved.frameScopes || {})) {
+      if (frameId != null) frameScopes.set(Number(tabId), Number(frameId));
+    }
   } catch (e) {
     console.error('[helm] offscreen 失败:', e);
   }
 }
 
 // 让 offscreen 也能读/写当前目标 tab
-// 切 tab 时：更新 pendingTabId，清空 pendingFrameId（frame 隶属于 tab，跨 tab 复用旧 frameId 无意义）
-//           旧 tab 的高亮熄灭（不再被操作）
+// 切 tab 时：更新 pendingTabId，旧 tab 的高亮熄灭（不再被操作）。
+// frame 作用域按 tab 存，切回来仍然有效，无需清空。
 chrome.tabs.onActivated.addListener(async (activeInfo) => {
+  // 截图为了取帧临时切了 tab，那不是用户切页，不能据此改写操作目标
+  if (suppressActivationTracking) return;
   // 旧 tab 熄灭高亮
   if (highlightTabId && highlightTabId !== activeInfo.tabId) {
     try { await chrome.tabs.sendMessage(highlightTabId, { target: 'dom-agent', action: 'hideHighlight' }); } catch (_) {}
@@ -541,8 +662,14 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
     if (highlightTimer) { clearTimeout(highlightTimer); highlightTimer = null; }
   }
   pendingTabId = activeInfo.tabId;
-  pendingFrameId = null;
-  await chrome.storage.session.set({ pendingTabId, pendingFrameId: null });
+  await chrome.storage.session.set({ pendingTabId });
+});
+
+// tab 关闭：回收它的 frame 作用域，避免 frameScopes 随开关标签无限增长，
+// 也避免 Chrome 复用 tabId 时继承到上一个页面的 frame
+chrome.tabs.onRemoved.addListener(async (tabId) => {
+  if (!frameScopes.delete(tabId)) return;
+  try { await persistFrameScopes(); } catch (_) { /* ignore */ }
 });
 
 // 兜底：若 setPanelBehavior 未生效，点图标时手动开侧栏

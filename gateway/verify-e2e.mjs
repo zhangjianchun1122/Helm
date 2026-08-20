@@ -74,9 +74,9 @@ ok('返回 serverInfo', init?.result?.serverInfo?.name === 'helm');
 console.log('\n=== B. tools/list ===');
 const list = await sendMCP({ jsonrpc: '2.0', id: 2, method: 'tools/list' });
 const toolNames = (list?.result?.tools || []).map((t) => t.name);
-ok('返回 21 个工具', toolNames.length === 21, `实际 ${toolNames.length}: ${toolNames.join(',')}`);
-ok('含核心工具 navigate/get_snapshot/click/fill/eval',
-  ['navigate', 'get_snapshot', 'click', 'fill', 'eval'].every((n) => toolNames.includes(n)));
+ok('返回 28 个工具', toolNames.length === 28, `实际 ${toolNames.length}: ${toolNames.join(',')}`);
+ok('含核心工具 navigate/create_tab/get_snapshot/click/fill/eval',
+  ['navigate', 'create_tab', 'get_snapshot', 'click', 'fill', 'eval'].every((n) => toolNames.includes(n)));
 ok('含 wait/screenshot/scroll/hover/set_active_frame/drag/save_file/download',
   ['wait', 'screenshot', 'scroll', 'hover', 'set_active_frame', 'drag', 'save_file', 'download'].every((n) => toolNames.includes(n)));
 
@@ -117,6 +117,12 @@ extWs.on('message', (raw) => {
         break;
       case 'navigate':
         data = { ok: true, url: msg.args?.url, tabId: 1 };
+        break;
+      case 'createTab':
+        // 真实 SW 会 chrome.tabs.create 并把新 tab 设为 pendingTabId；
+        // mock 只回显参数，验证 MCP→bridge→扩展 的 url/active 映射正确
+        data = { ok: true, tabId: 2, url: msg.args?.url || 'about:blank',
+          title: 'new tab', echoedActive: msg.args?.active };
         break;
       case 'click':
         data = { ok: true };
@@ -178,6 +184,28 @@ const nav = await sendMCP({ jsonrpc: '2.0', id: 5, method: 'tools/call',
   params: { name: 'navigate', arguments: { url: 'https://target.example.com' } } });
 const navText = nav?.result?.content?.[0]?.text || '';
 ok('navigate 到达扩展', /target\.example\.com/.test(navText), navText.slice(0, 200));
+
+console.log('\n=== F2. create_tab 全链路与参数映射 ===');
+const ct = await sendMCP({ jsonrpc: '2.0', id: 50, method: 'tools/call',
+  params: { name: 'create_tab', arguments: { url: 'https://newtab.example.com' } } });
+const ctText = ct?.result?.content?.[0]?.text || '';
+ok('create_tab 未报错', ct?.result?.isError !== true, JSON.stringify(ct?.result).slice(0, 200));
+ok('create_tab url 透传到扩展', /newtab\.example\.com/.test(ctText), ctText.slice(0, 200));
+ok('create_tab 返回新 tabId', /"tabId"\s*:\s*2/.test(ctText), ctText.slice(0, 200));
+
+// 不传 url 应落到 about:blank，且不应把 undefined 当成 URL 发下去
+const ct2 = await sendMCP({ jsonrpc: '2.0', id: 51, method: 'tools/call',
+  params: { name: 'create_tab', arguments: {} } });
+const ct2Text = ct2?.result?.content?.[0]?.text || '';
+ok('create_tab 无参未报错', ct2?.result?.isError !== true, JSON.stringify(ct2?.result).slice(0, 200));
+ok('create_tab 无参落到 about:blank', /about:blank/.test(ct2Text), ct2Text.slice(0, 200));
+
+// active:false 后台打开：布尔 false 必须原样透传，不能被 falsy 判断吞掉
+const ct3 = await sendMCP({ jsonrpc: '2.0', id: 52, method: 'tools/call',
+  params: { name: 'create_tab', arguments: { url: 'https://bg.example.com', active: false } } });
+const ct3Text = ct3?.result?.content?.[0]?.text || '';
+ok('create_tab active:false 未报错', ct3?.result?.isError !== true, JSON.stringify(ct3?.result).slice(0, 200));
+ok('create_tab active:false 原样透传', /"echoedActive"\s*:\s*false/.test(ct3Text), ct3Text.slice(0, 200));
 
 console.log('\n=== G. click 带 frameId 透传 ===');
 const clk = await sendMCP({ jsonrpc: '2.0', id: 6, method: 'tools/call',
