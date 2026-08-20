@@ -416,8 +416,11 @@ function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 // 结论：Chrome 不存在"不让 tab 可见就能截到它"的途径。所以后台 tab 采用临时激活：
 // 切过去截完立刻切回原 tab，约 200ms，代价是一次可见的闪烁，但结果正确且可预期。
 const SHOT_TIMEOUT_MS = 5000;        // captureVisibleTab 正常在 100ms 内；最小化窗口会挂住，靠它兜底
-const SHOT_ACTIVATE_SETTLE_MS = 120; // 切换后给合成器出帧的时间
-const SHOT_ACTIVATE_RETRIES = 5;     // 首帧未就绪时重试
+const SHOT_ACTIVATE_SETTLE_MS = 150; // 切过去后给合成器出首帧的时间
+// captureVisibleTab 限频约 2 次/秒，超了报 MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND。
+// 连续截图（或激活后重试）很容易撞上，重试间隔必须大于限频窗口，否则越retry越撞。
+const SHOT_RETRY_INTERVAL_MS = 600;
+const SHOT_MAX_ATTEMPTS = 4;         // 4 次 × 600ms 远小于网关 30s 上限
 
 // 临时激活期间不让 onActivated 改写操作目标：切 tab 是本次截图的副作用，
 // 不是用户切页，若被当成用户切页会把 pendingTabId 改到目标 tab 并且不再切回。
@@ -431,8 +434,11 @@ function withTimeout(promise, ms, message) {
   ]).finally(() => clearTimeout(timer));
 }
 
-
-
+// 这几类失败都是暂时的，隔一会儿重试就能成：
+//   限频配额、刚切过去还没出首帧（readback failed / not ready）
+function isTransientCaptureError(message) {
+  return /MAX_CAPTURE_VISIBLE_TAB_CALLS_PER_SECOND|readback failed|not ready|Cannot capture/i.test(message);
+}
 
 async function captureVisible(windowId, format, quality) {
   const opts = { format };
@@ -468,7 +474,7 @@ async function doScreenshot(args = {}, { tabIdHint } = {}) {
   // 目标已经是它所在窗口的可见 tab：直接截。
   // 用 tab.windowId 而不是 WINDOW_ID_CURRENT——多窗口下"当前窗口"可能不是目标所在窗口。
   if (tab.active) {
-    return decode(await captureVisible(tab.windowId, format, quality), 'captureVisibleTab');
+    return decode(await captureVisibleWithRetry(tab.windowId, format, quality), 'captureVisibleTab');
   }
 
   // 目标在后台：临时切过去截，再切回原 tab。
@@ -476,18 +482,9 @@ async function doScreenshot(args = {}, { tabIdHint } = {}) {
   suppressActivationTracking = true;
   try {
     await chrome.tabs.update(tabId, { active: true });
-    let dataUrl = null;
-    let lastError = null;
-    // 刚切过去时合成器可能还没出首帧，captureVisibleTab 会报 not ready，重试几次
-    for (let i = 0; i < SHOT_ACTIVATE_RETRIES && !dataUrl; i++) {
-      await sleep(SHOT_ACTIVATE_SETTLE_MS);
-      try {
-        dataUrl = await captureVisible(tab.windowId, format, quality);
-      } catch (e) {
-        lastError = e;
-      }
-    }
-    if (!dataUrl) throw lastError || new Error('截图失败：临时激活后仍未取到帧');
+    // 切过去后先等首帧，再交给带限频退避的重试
+    await sleep(SHOT_ACTIVATE_SETTLE_MS);
+    const dataUrl = await captureVisibleWithRetry(tab.windowId, format, quality);
     return decode(dataUrl, 'activate+captureVisibleTab',
       '目标在后台，已临时切到该标签页截图并切回原标签页');
   } finally {
@@ -497,6 +494,23 @@ async function doScreenshot(args = {}, { tabIdHint } = {}) {
     }
     suppressActivationTracking = false;
   }
+}
+
+// 限频与首帧未就绪都是暂时性失败，退避重试；其它错误立即抛出，不做无意义的重试
+async function captureVisibleWithRetry(windowId, format, quality) {
+  let lastError = null;
+  for (let attempt = 0; attempt < SHOT_MAX_ATTEMPTS; attempt++) {
+    if (attempt > 0) await sleep(SHOT_RETRY_INTERVAL_MS);
+    try {
+      const dataUrl = await captureVisible(windowId, format, quality);
+      if (dataUrl) return dataUrl;
+      lastError = new Error('截图失败：captureVisibleTab 返回空');
+    } catch (e) {
+      lastError = e;
+      if (!isTransientCaptureError(String(e?.message || e))) throw e;
+    }
+  }
+  throw lastError || new Error('截图失败：重试后仍未取到帧');
 }
 
 // ---------- downloadViaBrowser：用浏览器网络下载（fallback 网关 fetch） ----------

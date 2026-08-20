@@ -146,8 +146,9 @@ console.log(`    G 图 ${shotG?.size} 字节 via=${shotG?.via} | F 图 ${shotF?.
 
 // 不传 tabId 时应跟随当前操作目标（G，后台），而非前台
 const shotDefault = await callConfirmed('screenshot', { format: 'png' });
+hintIfStaleOrMinimized(shotDefault);
 ok('不传 tabId 时跟随当前操作目标 G（而非前台 F）', shotDefault?.tabId === tabG,
-  `实为 ${shotDefault?.tabId}，via=${shotDefault?.via}`);
+  `实为 ${shotDefault?.tabId}，原始返回 ${JSON.stringify(shotDefault).slice(0, 240)}`);
 
 console.log('\n=== P0-3: frame 作用域按 tab 隔离 ===');
 // 给 F 设一个不存在的 frameId。旧实现是全局值，会连带影响 G。
