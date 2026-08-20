@@ -309,6 +309,21 @@ async function handleActionInner(req) {
       return doWait(args, { frameId, tabIdHint });
     case 'screenshot':
       return doScreenshot(args, { tabIdHint });
+    case 'getExtInfo': {
+      return {
+        ok: true,
+        bootId: await getBootId(),
+        version: chrome.runtime.getManifest().version,
+      };
+    }
+    case 'reloadExtension': {
+      // 先把回包发出去，再重载：chrome.runtime.reload() 会立刻销毁 SW 与 offscreen，
+      // 同步调用的话调用方永远收不到结果，只能看到连接莫名断开。
+      const delayMs = Math.max(50, Math.min(2000, Number(args.delayMs) || 200));
+      const current = await getBootId();
+      setTimeout(() => { chrome.runtime.reload(); }, delayMs);
+      return { ok: true, reloadingInMs: delayMs, previousBootId: current };
+    }
     case 'downloadViaBrowser':
       return downloadViaBrowser(args.url, args.filename);
     default:
@@ -446,8 +461,8 @@ async function captureVisible(windowId, format, quality) {
   return withTimeout(
     chrome.tabs.captureVisibleTab(windowId, opts),
     SHOT_TIMEOUT_MS,
-    `截图失败：captureVisibleTab 超时（${SHOT_TIMEOUT_MS}ms）。窗口可能处于最小化状态——`
-    + 'Chrome 无法截取未在渲染的窗口，请先还原窗口再重试',
+    `截图失败：captureVisibleTab 超时（${SHOT_TIMEOUT_MS}ms）。`
+    + '窗口最小化或长期不在出帧时会这样，可还原窗口后重试',
   );
 }
 
@@ -510,7 +525,21 @@ async function captureVisibleWithRetry(windowId, format, quality) {
       if (!isTransientCaptureError(String(e?.message || e))) throw e;
     }
   }
-  throw lastError || new Error('截图失败：重试后仍未取到帧');
+  // 重试到底还是失败。实测最小化窗口下截图会时好时坏（有缓存帧时仍能成功，
+  // 否则报 image readback failed 之类看不出原因的底层错误），所以把窗口状态附上，
+  // 但不断言它就是原因。
+  throw new Error(`${lastError?.message || '截图失败：重试后仍未取到帧'}`
+    + `${await minimizedHint(windowId)}`);
+}
+
+async function minimizedHint(windowId) {
+  try {
+    const win = await chrome.windows.get(windowId);
+    if (win?.state === 'minimized') {
+      return '（该窗口当前最小化，这类失败多半与此有关：最小化窗口不一定在出帧；可还原窗口后重试）';
+    }
+  } catch (_) { /* 拿不到窗口状态就不补充 */ }
+  return '';
 }
 
 // ---------- downloadViaBrowser：用浏览器网络下载（fallback 网关 fetch） ----------
@@ -640,6 +669,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 // ---------- 启动：确保 offscreen，它再连网关 ----------
 chrome.runtime.onStartup.addListener(bootstrap);
 chrome.runtime.onInstalled.addListener(bootstrap);
+
+// 本次"扩展加载"的标识。SW 约 30s 空闲被回收再重建，那不算重新加载，
+// 所以 bootId 存在 storage.session 里：SW 重建时读回同一个值，
+// 而扩展被重新加载/更新时 session 存储会清空，从而换成新值。
+// 网关据此判断 reload_extension 是否真的完成，也用于识别扩展是否还在跑旧代码。
+let bootId = null;
+
+async function getBootId() {
+  if (bootId) return bootId;
+  const saved = await chrome.storage.session.get(['helmBootId']);
+  if (saved.helmBootId) {
+    bootId = saved.helmBootId;
+  } else {
+    bootId = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+    await chrome.storage.session.set({ helmBootId: bootId });
+  }
+  return bootId;
+}
 
 async function bootstrap() {
   // 1) 最关键：点图标即开侧栏。放最前，失败也别阻断后续

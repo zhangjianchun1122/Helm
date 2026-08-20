@@ -80,6 +80,16 @@ test('每个非本地工具都有 action 映射，未知工具抛错', () => {
   assert.throws(() => mapToolToAction('no_such_tool', {}), /未知工具/);
 });
 
+test('reload_extension 走本地编排而非单次 invoke', () => {
+  // 重载会把 WS 连接一起带走，单次 invoke 拿不到结果，
+  // 必须由网关侧编排"断开→重连→bootId 变化"，所以它是本地工具
+  assert.ok(isLocalTool('reload_extension'));
+  assert.ok(TOOLS.some((t) => t.name === 'reload_extension'));
+  // 它不是高危工具（不外传数据、不删东西），但会中断进行中的操作，描述里须讲清
+  const tool = TOOLS.find((t) => t.name === 'reload_extension');
+  assert.match(tool.description, /中断/);
+});
+
 test('工具定义的 schema 结构完整且名称唯一', () => {
   const names = TOOLS.map((t) => t.name);
   assert.equal(new Set(names).size, names.length, '工具名不应重复');

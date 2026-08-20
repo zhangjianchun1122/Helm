@@ -99,12 +99,71 @@ async function download({ url, ref, path: savePath, frameId, tabId }) {
   }
 }
 
+// 重新加载扩展，并等到它重连、且确实是新一次加载之后才返回。
+// 判据是 bootId 变化：SW 空闲约 30s 被回收再重建属于常态，bootId 存在
+// storage.session 里所以重建时不变；扩展被重新加载才会清空 session 换新值。
+// 只等"连上了"是不够的——重载前后连接都是通的，会把没重载当成已重载。
+async function reloadExtension({ timeoutMs = 25000 } = {}) {
+  if (!isExtensionConnected()) await waitForExtension(10000);
+
+  let previousBootId = null;
+  try {
+    previousBootId = (await invoke('getExtInfo', {}, {}))?.bootId ?? null;
+  } catch (_) {
+    // 旧版扩展没有 getExtInfo。拿不到基线就只能退化成"等重连"，
+    // 结果里会说明这一点，不假装验证过。
+  }
+
+  const started = Date.now();
+  const ack = await invoke('reloadExtension', {}, {});
+  const deadline = started + timeoutMs;
+
+  let bootId = null;
+  let version = null;
+  let lastError = null;
+  // 重载会断开 WS，重连后 offscreen 才重新 hello，期间 invoke 必然失败，属预期
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 500));
+    try {
+      await waitForExtension(Math.max(1000, deadline - Date.now()));
+      const info = await invoke('getExtInfo', {}, {});
+      if (info?.bootId && info.bootId !== previousBootId) {
+        bootId = info.bootId;
+        // 报告重载后扩展实际加载的版本，便于确认磁盘上的改动已生效
+        version = info.version ?? null;
+        break;
+      }
+    } catch (e) {
+      lastError = e;
+    }
+  }
+
+  if (!bootId) {
+    throw new Error(`reload_extension: 等待扩展重新加载超时（${timeoutMs}ms）`
+      + `${lastError ? '，最后一次错误：' + lastError.message : ''}`);
+  }
+
+  return {
+    ok: true,
+    previousBootId,
+    bootId,
+    version,
+    verified: previousBootId != null,
+    elapsedMs: Date.now() - started,
+    reloadingInMs: ack?.reloadingInMs,
+    note: previousBootId == null
+      ? '重载前未取到 bootId（扩展为旧版本），已按重连成功处理，未能严格验证是新一次加载'
+      : undefined,
+  };
+}
+
 async function executeLocal(name, args) {
   switch (name) {
     case 'save_file': return saveFile(args);
     case 'read_file': return readFile(args);
     case 'list_files': return listFiles(args);
     case 'download': return download(args);
+    case 'reload_extension': return reloadExtension(args);
     case 'set_permission': return setPermission(args.tool, args.scope);
     case 'allow_once': return allowOnce(args.tool);
     case 'get_permissions': return getPermissions();

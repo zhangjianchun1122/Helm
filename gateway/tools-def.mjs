@@ -285,6 +285,16 @@ export const TOOLS = [
       },
     },
   },
+  {
+    name: 'reload_extension',
+    description: '重新加载 Helm 浏览器扩展，使改动过的扩展代码生效，返回时扩展已重连且可用。仅在你确实修改了扩展源码后需要——普通浏览器操作不需要调用。会中断该扩展上所有进行中的操作（含其它 Agent 的），并重置当前目标标签页与 frame 作用域；已打开的网页不受影响。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        timeoutMs: { type: 'integer', default: 25000, description: '等待扩展重连并就绪的最长毫秒数' },
+      },
+    },
+  },
   // ---------- 权限管理工具 ----------
   {
     name: 'set_permission',
@@ -388,8 +398,11 @@ export function mapToolToAction(name, args) {
 }
 
 // 本地工具（不经扩展 invoke）
+// reload_extension 归在这里：它要在扩展断开与重连之间做编排，
+// 单次 invoke 拿不到结果（重载会把连接一起带走）。
 export function isLocalTool(name) {
   return name === 'save_file' || name === 'read_file' || name === 'list_files' || name === 'download'
+    || name === 'reload_extension'
     || name === 'set_permission' || name === 'get_permissions' || name === 'revoke_permission'
     || name === 'allow_once' || name === 'confirm_execution' || name === 'get_security_status';
 }

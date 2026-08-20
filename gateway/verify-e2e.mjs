@@ -74,7 +74,7 @@ ok('返回 serverInfo', init?.result?.serverInfo?.name === 'helm');
 console.log('\n=== B. tools/list ===');
 const list = await sendMCP({ jsonrpc: '2.0', id: 2, method: 'tools/list' });
 const toolNames = (list?.result?.tools || []).map((t) => t.name);
-ok('返回 28 个工具', toolNames.length === 28, `实际 ${toolNames.length}: ${toolNames.join(',')}`);
+ok('返回 29 个工具', toolNames.length === 29, `实际 ${toolNames.length}: ${toolNames.join(',')}`);
 ok('含核心工具 navigate/create_tab/get_snapshot/click/fill/eval',
   ['navigate', 'create_tab', 'get_snapshot', 'click', 'fill', 'eval'].every((n) => toolNames.includes(n)));
 ok('含 wait/screenshot/scroll/hover/set_active_frame/drag/save_file/download',
