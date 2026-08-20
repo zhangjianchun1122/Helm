@@ -1,6 +1,6 @@
 {
   "name": "helm",
-  "version": "0.1.0",
+  "version": "0.2.2",
   "private": true,
   "type": "module",
   "description": "本地网关：把 Chrome 扩展的浏览器操作能力通过 MCP 暴露给 AI Agent",
@@ -11,6 +11,7 @@
     "start": "node mcp-server.mjs",
     "mcp": "node mcp-server.mjs",
     "bridge": "node bridge.mjs",
+    "test": "node --test test/*.test.mjs test/security/*.test.mjs",
     "test:security": "node --test test/security/*.test.mjs",
     "test:security:e2e": "node test-browser-security.mjs"
   },

@@ -61,9 +61,9 @@ mcp-server.mjs ──invoke──▶ bridge.mjs（WS :8787，常驻后台）
 
 **关键设计**：MV3 Service Worker 约 30s 被回收，长连接和状态放在 Offscreen Document 与网关进程里，SW 保持无状态可随时重建。多个 Agent 同时使用时，各自 spawn 的 mcp-server 走附属模式连同一个常驻 bridge，互不干扰。
 
-## 27 个工具
+## 28 个工具
 
-Helm 提供 21 个浏览器/文件操作工具和 6 个权限与安全管理工具。
+Helm 提供 22 个浏览器/文件操作工具和 6 个权限与安全管理工具。
 
 ### 感知类
 | 工具 | 作用 |
@@ -73,10 +73,13 @@ Helm 提供 21 个浏览器/文件操作工具和 6 个权限与安全管理工�
 | `list_frames` | 枚举当前页所有 iframe（跨 iframe 操作基础） |
 | `get_text` | 读取元素纯文本 |
 
+> **标签页作用域**：除 `list_tabs`、`create_tab` 和纯本地文件工具外，浏览器工具都接受可选的 `tabId`。省略时作用于当前目标标签页；传入时该次调用固定在指定标签页，不受用户中途切换标签影响，也不改变用户的活动标签。多步任务建议每次调用都显式传同一个 `tabId`，避免"在一个标签页定位、在另一个标签页执行"的错配。
+
 ### 操作类
 | 工具 | 作用 |
 |---|---|
-| `navigate` | 打开 URL，等待加载完成 |
+| `navigate` | 在当前标签页打开 URL，等待加载完成 |
+| `create_tab` | 创建新标签页并打开 URL，后续操作默认作用于新标签 |
 | `click` / `right_click` | 左键点击 / 真实右键（chrome.debugger isTrusted） |
 | `fill` | 输入文本 |
 | `press` | 键盘事件（Enter / Esc / 快捷键） |
@@ -88,9 +91,9 @@ Helm 提供 21 个浏览器/文件操作工具和 6 个权限与安全管理工�
 | 工具 | 作用 |
 |---|---|
 | `wait` | 等待文本出现/消失、选择器匹配、DOM 静止（SW 轮询，超时返回 false 不抛错） |
-| `set_active_frame` / `get_active_frame` | 切换 iframe 作用域 |
+| `set_active_frame` / `get_active_frame` | 切换 iframe 作用域（按标签页隔离，不跨标签页泄漏） |
 | `eval` | 执行任意 JS（MAIN world 注入，绕过扩展 CSP，所有站点可用） |
-| `screenshot` | 截图（base64 PNG/JPEG） |
+| `screenshot` | 截图（base64 PNG/JPEG）。前台标签直接截；后台标签临时切过去截再切回（Chrome 无法截取不可见标签） |
 
 ### 产物类
 | 工具 | 作用 |
@@ -271,7 +274,7 @@ helm/
 │  ├─ http-server.mjs      # HTTP 端点（非 MCP Agent 兜底）
 │  ├─ bridge.mjs           # WebSocket 桥（主/附属模式自动切换）
 │  ├─ bridge-daemon.mjs    # 常驻启动器（开机自启用）
-│  ├─ tools-def.mjs        # 27 个工具定义 + 映射（共享模块）
+│  ├─ tools-def.mjs        # 28 个工具定义 + 映射（共享模块）
 │  ├─ permissions.mjs      # 高危工具的分层授权与撤销
 │  ├─ security/            # 检测、URL 清洗、递归脱敏、统一审计与执行保护
 │  └─ start-gateway.bat    # 启动包装器
