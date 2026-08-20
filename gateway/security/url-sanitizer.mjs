@@ -9,7 +9,11 @@ function isSensitiveKey(key) {
 
 export function sanitizeUrl(input) {
   if (typeof input !== 'string' || !input) return input;
-  const absolute = /^[a-z][a-z\d+.-]*:\/\//i.test(input);
+  const hierarchical = /^[a-z][a-z\d+.-]*:\/\//i.test(input);
+  // about:blank、mailto:、data: 等无 // 的 scheme：不识别的话会被当相对路径，
+  // 只剩 pathname（about:blank → blank）。scheme 要求 ≥2 字符以排除 Windows 盘符 C:
+  const opaque = !hierarchical && /^[a-z][a-z\d+.-]+:/i.test(input);
+  const absolute = hierarchical || opaque;
   try {
     const url = new URL(input, absolute ? undefined : 'https://helm.invalid');
     url.username = '';
