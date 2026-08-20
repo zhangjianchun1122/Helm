@@ -61,9 +61,9 @@ mcp-server.mjs ──invoke──▶ bridge.mjs（WS :8787，常驻后台）
 
 **关键设计**：MV3 Service Worker 约 30s 被回收，长连接和状态放在 Offscreen Document 与网关进程里，SW 保持无状态可随时重建。多个 Agent 同时使用时，各自 spawn 的 mcp-server 走附属模式连同一个常驻 bridge，互不干扰。
 
-## 28 个工具
+## 29 个工具
 
-Helm 提供 22 个浏览器/文件操作工具和 6 个权限与安全管理工具。
+Helm 提供 23 个浏览器/文件操作工具和 6 个权限与安全管理工具。
 
 ### 感知类
 | 工具 | 作用 |
@@ -100,6 +100,11 @@ Helm 提供 22 个浏览器/文件操作工具和 6 个权限与安全管理工�
 |---|---|
 | `download` | 下载文件（三级 fallback：网关 fetch → 扩展 chrome.downloads → 搬运） |
 | `save_file` / `read_file` / `list_files` | 本地文件读写（网关 Node fs 直写） |
+
+### 维护类
+| 工具 | 作用 |
+|---|---|
+| `reload_extension` | 重新加载扩展使改动过的扩展代码生效，返回时已重连可用（改扩展源码后才需要） |
 
 ### 权限管理类
 | 工具 | 作用 |
@@ -274,7 +279,7 @@ helm/
 │  ├─ http-server.mjs      # HTTP 端点（非 MCP Agent 兜底）
 │  ├─ bridge.mjs           # WebSocket 桥（主/附属模式自动切换）
 │  ├─ bridge-daemon.mjs    # 常驻启动器（开机自启用）
-│  ├─ tools-def.mjs        # 28 个工具定义 + 映射（共享模块）
+│  ├─ tools-def.mjs        # 29 个工具定义 + 映射（共享模块）
 │  ├─ permissions.mjs      # 高危工具的分层授权与撤销
 │  ├─ security/            # 检测、URL 清洗、递归脱敏、统一审计与执行保护
 │  └─ start-gateway.bat    # 启动包装器

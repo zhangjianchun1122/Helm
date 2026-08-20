@@ -1,6 +1,6 @@
 {
   "name": "helm",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "private": true,
   "type": "module",
   "description": "本地网关：把 Chrome 扩展的浏览器操作能力通过 MCP 暴露给 AI Agent",
