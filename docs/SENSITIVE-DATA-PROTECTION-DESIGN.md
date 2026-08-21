@@ -23,7 +23,7 @@
 3. 页面内容、文件内容和 URL 只采集完成任务所需的最小范围，并设置硬性容量上限。
 4. stdio MCP 与 HTTP API 使用完全相同的 DLP 策略，不能出现一个入口脱敏、另一个入口泄漏。
 5. 所有脱敏行为可测试、可观测，但任何指标或日志均不得保存被脱敏的原文。
-6. 默认配置保持个人开发场景可用；`managed` 模式必须 fail closed。
+6. 默认配置保持个人开发场景可用；`managed` 模式必须 fail closed。`open` 是开发宽松模式：`eval` / `screenshot` 默认 `allow`，但不关闭 DLP、输出预算、审计、错误清洗、脱敏等边界；`download` 与覆盖式 `save_file` 继续使用独立的高危权限授权。
 
 ### 1.2 信任边界
 
@@ -212,7 +212,7 @@ type ConfirmationRecord = {
 
 可通过 `HELM_SECURITY_POLICY` 指定绝对路径。找不到文件时加载内置安全默认值。配置错误时：
 
-- `open`/`balanced`：回退内置安全默认值并输出不含配置内容的警告；
+- `open`/`balanced`：回退内置安全默认值并输出不含配置内容的警告；其中 `open` 的内置默认值为 `eval: allow`、`screenshot: allow`，但 DLP、输出预算、审计、错误清洗和脱敏仍强制执行；`download` 与覆盖式 `save_file` 不受该默认放宽影响，仍需独立高危权限授权。
 - `managed`：**在进程启动阶段**确定策略状态并拒绝启动工具执行服务，但 `/health` 可返回策略错误码。
 
 ### 5.1.1 managed 模式启动阶段确定
@@ -242,6 +242,8 @@ export async function executeToolSecure({ name, args, transport, executeRaw, req
 6. **健康检查语义**：`/health` 返回的策略状态仅用于运维监控，不用于工具执行决策。工具执行决策只看 `executeToolSecure` 入口的策略快照。
 
 ### 5.2 配置 Schema 示例
+
+`open` / `balanced` 的区别只在内置默认的开发便利性：`open` 默认把 `eval` 与 `screenshot` 设为 `allow`；显式策略仍可进一步收紧。无论模式如何，统一执行管线继续执行 DLP、容量/输出预算、审计、错误清洗与脱敏。
 
 ```json
 {
@@ -463,7 +465,7 @@ type Detection = {
 
 `eval` 无法通过返回值正则实现可靠安全，因为代码可编码、切片或加密敏感数据。处理原则：
 
-- `managed` 默认 `block`；`balanced` 默认 `confirm`，并明确提示可访问页面全部数据。
+- `open` 默认 `allow`（开发宽松语义）；`balanced` 默认 `confirm`；`managed` 强制 `block`。三种模式下返回值仍必须经过 Gateway DLP 和容量限制，`open` 不等于关闭脱敏、预算或审计。并明确提示 eval 可访问页面全部数据。
 - **confirm 使用 §4.3 的确认令牌机制**，不复用 `allow_once`：
   - `argsDigest = SHA-256(code)`，绑定具体代码内容。
   - 令牌有效期 60 秒，过期后需重新确认。
@@ -478,7 +480,7 @@ type Detection = {
 
 截图是不可结构化载体，第一阶段不实现”可靠像素脱敏”：
 
-- `managed` 默认 block 或 confirm；由策略决定。
+- `open` 默认 `allow`（开发宽松语义）；`balanced` 默认 `confirm`；`managed` 默认 block 或 confirm，由策略决定。无论模式如何，截图仍受审计、大小/输出预算和脱敏元数据边界约束；不把 base64 写入审计或 Side Panel 动作摘要。
 - **confirm 使用 §4.3 的确认令牌机制**，不复用 `allow_once`：
   - `argsDigest = SHA-256(JSON.stringify({format, quality}))`，绑定截图参数。
   - 令牌有效期 60 秒，过期后需重新确认。
@@ -580,6 +582,14 @@ type Detection = {
 ```
 
 不要把检测位置、匹配文本、前后文写入元数据。
+
+### 10.1.1 Managed HTTP/MCP 错误契约
+
+两条传输都必须调用同一个安全执行入口，并返回同一类安全错误对象：`{ code, tool, message }`。`message` 只包含经 `sanitizeError` 清洗后的安全摘要，不返回堆栈、策略原文、鉴权令牌或敏感输入。
+
+- **MCP stdio**：普通工具失败时返回 `result` 外壳并设置 `isError: true`；但 managed 策略不可用是传输级错误，返回 JSON-RPC `error`，`data.code=HELM_POLICY_NOT_LOADED`。不使用 HTTP 状态码。
+- **HTTP**：`/health` 无需鉴权；正常健康返回 `200`，managed 策略缺失/损坏返回 `503` 和 `policyError`/安全错误码。其他端点需 Bearer Token，缺失或错误返回 `401`；请求 JSON 无效返回 `400`；未知工具或路径返回 `404`；工具执行结果沿用 `{ ok: true, result }` 或 `{ ok: false, error }`。
+- **Managed fail closed**：内部诊断保留 `HELM_SECURITY_POLICY_MISSING` / `HELM_SECURITY_POLICY_INVALID`，对外统一返回 `HELM_POLICY_NOT_LOADED`；统一执行入口拒绝工具执行，不能由 HTTP 或 MCP 任一层单独绕过。
 
 ### 10.2 新增管理工具
 

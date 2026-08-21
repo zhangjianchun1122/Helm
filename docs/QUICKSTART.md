@@ -16,6 +16,8 @@
 安装后每次开机自动就绪，直接在 ZCode / Claude Desktop / Cursor 中使用即可。
 卸载双击 `install/uninstall.bat`。详见 `install/README.md`。
 
+> **当前能力（0.2.5）**：MCP/HTTP 共用当前 31 个工具。除 `list_tabs`、`create_tab` 和纯本地文件工具外，浏览器工具均支持显式 `tabId`；省略时使用当前目标标签页，传入时整次调用固定到指定 tab。`set_active_frame` / `get_active_frame` 的 frame 作用域按 tab 隔离。后台目标的 `screenshot` 会临时激活目标 tab、截图后切回原 tab；`download` 的 `url` 模式与 `ref` 模式分别走 URL 下载和目标 tab 元素 href 解析。
+
 > 以下为手动启动方式（调试或非 Windows 环境用）。
 
 ---
@@ -73,7 +75,7 @@ npm start            # 等价 node mcp-server.mjs
 
 ## 3. 接入 Agent
 
-helm 通过 MCP stdio 暴露 21 个工具，任何支持 MCP 的 Agent 均可直接接入，零代码适配。以下是已验证的 Agent 配置：
+helm 通过 MCP stdio 暴露当前 31 个工具（0.2.5），任何支持 MCP 的 Agent 均可直接接入，零代码适配。工具包括 `create_tab`、`activate_tab`、`close_tab`；浏览器工具支持显式 `tabId` 全链路定位，frame 作用域按 tab 隔离，后台 screenshot 会临时激活目标 tab 后切回，download 区分 `url` 与 `ref` 两种模式。以下是已验证的 Agent 配置：
 
 > 以下配置假设网关已在运行（双击 `install/install.bat` 后自动启动，开机自启）。
 
@@ -153,7 +155,7 @@ args = ["/path/to/helm/gateway/mcp-server.mjs"]
 
 ### 非 MCP 智能体 / 自研 Agent（HTTP 接入）
 
-对于不支持 MCP 的自研 Agent，可用 HTTP 端点（`gateway/http-server.mjs`）：
+对于不支持 MCP 的自研 Agent，可用 HTTP 端点（`gateway/http-server.mjs`）。HTTP 与 MCP 共用同一执行器和安全错误语义：工具结果为 `{ok, result}` 或 `{ok:false, error:{code, tool, message}}`；HTTP 另以状态码表达鉴权、策略和路由错误（`401` 未授权、`503` managed 策略不可用、`404` 未知路径/工具，`400` JSON 无效）：
 
 ```bash
 # 启动 HTTP 端点（bridge 已在跑）
@@ -171,7 +173,15 @@ curl -X POST -H "Authorization: Bearer mykey" -H "Content-Type: application/json
 
 ---
 
-## 4. 验收测试（阶段 0 验收标准）
+## 4. 当前能力速览
+
+- **标签页生命周期**：`create_tab` 创建并返回 `tabId`；`activate_tab` 激活指定 tab；`close_tab` 关闭指定 tab（未保存表单内容可能丢失）。
+- **显式 tab 目标**：浏览器操作工具可传 `tabId`，从 `navigate`、frame 枚举、快照、交互、等待、滚动、悬停、拖拽、执行脚本、截图到下载 `ref` 模式均沿链路透传；未传时才使用当前目标 tab。
+- **frame 作用域**：`set_active_frame` / `get_active_frame` 的默认 frame 按 tab 保存，切换 tab 不会把 frameId 泄漏到另一标签页。
+- **后台截图**：Chrome 只能截可见 tab；目标在后台时，`screenshot` 临时激活目标、截图后切回原活动 tab，返回 `via` 说明实际路径。
+- **下载模式**：`download(url=...)` 直接按 URL 下载；`download(ref=..., tabId=...)` 在指定 tab/frame 的快照中解析 href 后下载。网关 fetch 失败时会回退到浏览器下载并搬运到目标路径。
+
+## 5. 验收测试（阶段 0 验收标准）
 
 在已登录任一站点的浏览器里，让 Agent 完成两件事即算通过：
 
@@ -185,9 +195,18 @@ Agent 预期调用：`list_tabs` 或 `navigate` → `get_snapshot` → 汇报。
 
 Agent 预期调用：`get_snapshot` → 找到 ref → `click(ref)` → `list_tabs` 读 URL。
 
+**自动化回归**（需要扩展已连接）：
+
+```bash
+cd gateway
+npm run test:security       # 安全策略、DLP、确认和 managed 传输契约
+npm run test:security:e2e   # balanced + confirmation 安全专项
+npm run test:e2e:legacy -- verify-e2e.mjs  # 隔离 open 策略/临时项目权限，结束自动清理
+```
+
 ---
 
-## 5. 工作原理速览
+## 6. 工作原理速览
 
 ```
 Agent (Claude/Codex)
@@ -214,7 +233,7 @@ mcp-server.mjs ──invoke──▶ bridge.mjs (WS server:8787)
 
 ---
 
-## 6. 常见问题
+## 7. 常见问题
 
 | 现象 | 原因/处理 |
 |---|---|
@@ -226,6 +245,6 @@ mcp-server.mjs ──invoke──▶ bridge.mjs (WS server:8787)
 
 ---
 
-## 7. 下一步（阶段 1）
+## 8. 下一步（阶段 1）
 
 补齐：`wait` / `drag` / `hover` / `scroll` / `download` / `save_file`，以及 Side Panel 动作流可视化、高危动作确认。详见 `docs/feasibility-and-plan.md` 第六节。

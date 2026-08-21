@@ -8,11 +8,11 @@
   产物：dist/Helm-Portable-<version>.zip
 .EXAMPLE
   powershell -File scripts/build-pack.ps1
-  powershell -File scripts/build-pack.ps1 -Version 0.2.0
+  powershell -File scripts/build-pack.ps1 -Version 0.2.5
 #>
 
 param(
-    [string]$Version = '0.1.0'
+    [string]$Version = '0.2.5'
 )
 
 $ErrorActionPreference = 'Stop'

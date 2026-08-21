@@ -61,9 +61,9 @@ mcp-server.mjs ──invoke──▶ bridge.mjs（WS :8787，常驻后台）
 
 **关键设计**：MV3 Service Worker 约 30s 被回收，长连接和状态放在 Offscreen Document 与网关进程里，SW 保持无状态可随时重建。多个 Agent 同时使用时，各自 spawn 的 mcp-server 走附属模式连同一个常驻 bridge，互不干扰。
 
-## 29 个工具
+## 31 个工具
 
-Helm 提供 23 个浏览器/文件操作工具和 6 个权限与安全管理工具。
+Helm 提供 24 个浏览器/文件操作工具、1 个维护工具和 6 个权限与安全管理工具。
 
 ### 感知类
 | 工具 | 作用 |
@@ -80,6 +80,8 @@ Helm 提供 23 个浏览器/文件操作工具和 6 个权限与安全管理工�
 |---|---|
 | `navigate` | 在当前标签页打开 URL，等待加载完成 |
 | `create_tab` | 创建新标签页并打开 URL，后续操作默认作用于新标签 |
+| `activate_tab` | 显式激活指定标签页并切换到前台 |
+| `close_tab` | 关闭真实标签页（未保存表单内容可能丢失） |
 | `click` / `right_click` | 左键点击 / 真实右键（chrome.debugger isTrusted） |
 | `fill` | 输入文本 |
 | `press` | 键盘事件（Enter / Esc / 快捷键） |
@@ -122,7 +124,7 @@ Helm 提供 23 个浏览器/文件操作工具和 6 个权限与安全管理工�
 
 ### 方式一：一键安装（推荐）
 
-1. 下载 [Helm-Portable-0.1.0.zip](../../releases)
+1. 下载 [Helm-Portable-0.2.5.zip](../../releases)
 2. 解压到任意目录
 3. 双击 `install/install.bat`
 4. **手动加载 Chrome 扩展**（安装器会自动打开 `chrome://extensions` 页面）：
@@ -250,13 +252,13 @@ Helm 在用户真实浏览器里操作，安全是核心关切。三层防护：
 | **高危工具授权** | `eval` / `download` / 覆盖式 `save_file` 默认拦截 | 用户可选择单次、会话级、项目级或用户级授权，并可随时撤销；`save_file` 追加模式不视为高危 |
 | **审计日志** | 统一安全审计 | `audit-log.jsonl`，固定字段 JSONL；参数先脱敏，默认不保存结果正文 |
 
-加上 Side Panel 动作流可视化 + 页面琥珀发光边框，用户随时知道 Agent 在干什么，可随时介入。HTTP 端点除 `/health` 外均需 Bearer Token 鉴权；未显式配置 `HELM_API_KEY` 时会随机生成 token。
+加上 Side Panel 动作流可视化 + 页面琥珀发光边框，用户随时知道 Agent 在干什么，可随时介入。HTTP 端点除 `/health` 外均需 Bearer Token 鉴权；未显式配置 `HELM_API_KEY` 时生成并保存随机 token（stderr 仅提示保存位置和末四位）。HTTP 与 MCP 均经过同一安全执行入口：工具执行结果统一返回 `{ ok, result }` 或 `{ ok: false, error: { code, tool, message } }` 语义；HTTP 额外使用 HTTP 状态码表示鉴权、策略和路由错误。
 
 ### 敏感数据保护
 
-Helm 默认使用 `balanced` 策略：密码、Cookie、Token、API Key、私钥等内容在返回 Agent 或写入审计日志前由确定性代码脱敏。`eval` 和 `screenshot` 需要用户单次确认，确认仅对同一工具、参数和逻辑请求有效 60 秒。
+Helm 默认使用 `balanced` 策略：密码、Cookie、Token、API Key、私钥等内容在返回 Agent 或写入审计日志前由确定性代码脱敏。开发时可设置 `HELM_SECURITY_MODE=open`：`eval` 和 `screenshot` 默认直接 `allow`，但 DLP、输出预算、审计、错误清洗和脱敏仍始终生效；`download` 与覆盖式 `save_file` 不受 open 模式放宽影响，继续由独立高危权限系统控制。`balanced` 下 `eval` / `screenshot` 仍需要参数绑定的用户单次确认，确认仅对同一工具、参数和逻辑请求有效 60 秒。
 
-策略文件默认位于 `%APPDATA%\Helm\security-policy.json`，也可用 `HELM_SECURITY_POLICY` 指定绝对路径。`managed` 模式下策略缺失或损坏时工具执行 fail closed，HTTP `/health` 仍可用于诊断。可调用 `get_security_status` 查看当前模式、配置哈希、检测器和累计脱敏计数，不会返回敏感原文。
+策略文件默认位于 `%APPDATA%\Helm\security-policy.json`，也可用 `HELM_SECURITY_POLICY` 指定绝对路径。`managed` 模式下策略缺失或损坏时工具执行 fail closed，HTTP `/health` 仍可用于诊断；HTTP 与 MCP 对策略失败、鉴权和工具执行使用统一错误契约：managed 策略不可用时 MCP `tools/call` 返回 JSON-RPC error（`data.code=HELM_POLICY_NOT_LOADED`），普通工具失败仍以 `isError: true` 携带 `{code, tool, message}`；HTTP 则使用 `401`（鉴权）、`400`（无效 JSON）、`404`（未知工具/路径）、`503`（managed 策略不可用），工具结果仍为 `{ok, result|error}`。可调用 `get_security_status` 查看当前模式、配置哈希、检测器和累计脱敏计数，不会返回敏感原文。
 
 ```bash
 cd gateway
@@ -279,7 +281,7 @@ helm/
 │  ├─ http-server.mjs      # HTTP 端点（非 MCP Agent 兜底）
 │  ├─ bridge.mjs           # WebSocket 桥（主/附属模式自动切换）
 │  ├─ bridge-daemon.mjs    # 常驻启动器（开机自启用）
-│  ├─ tools-def.mjs        # 29 个工具定义 + 映射（共享模块）
+│  ├─ tools-def.mjs        # 31 个工具定义 + 映射（共享模块）
 │  ├─ permissions.mjs      # 高危工具的分层授权与撤销
 │  ├─ security/            # 检测、URL 清洗、递归脱敏、统一审计与执行保护
 │  └─ start-gateway.bat    # 启动包装器
@@ -303,11 +305,13 @@ helm/
 ## 开发
 
 ```bash
-# 运行 e2e 测试（需扩展已连接）
-cd gateway && node verify-e2e.mjs
+# 运行隔离 legacy E2E（需扩展已连接；临时策略/权限/审计，结束自动清理）
+cd gateway && npm run test:e2e:legacy -- verify-e2e.mjs
+# 安全专项仍使用 balanced + confirmation
+cd gateway && npm run test:security:e2e
 
 # 打包分发 ZIP
-powershell -File scripts/build-pack.ps1 -Version 0.1.0
+powershell -File scripts/build-pack.ps1 -Version 0.2.5
 ```
 
 ## 已验证的 Agent
