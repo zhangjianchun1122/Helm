@@ -4,6 +4,7 @@ import fsp from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { loadSecurityConfig } from '../../security/config.mjs';
+import { evaluatePreExecutionPolicy } from '../../security/tool-policy.mjs';
 
 test('managed mode fails closed when policy is missing or invalid', async () => {
   const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'helm-config-'));
@@ -47,5 +48,46 @@ test('audit settings are validated and relative policy values resolve safely', a
   assert.equal(config.policy.audit.enabled, false);
   assert.equal(config.policy.audit.path, path.join(dir, 'custom.jsonl'));
   assert.equal(config.policy.audit.maxFileBytes, 12345);
+  await fsp.rm(dir, { recursive: true, force: true });
+});
+
+test('open mode allows eval and screenshot by default while balanced keeps confirmation', async () => {
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'helm-config-modes-'));
+  const missing = path.join(dir, 'missing.json');
+  const open = await loadSecurityConfig({ policyPath: missing, requestedMode: 'open' });
+  const balanced = await loadSecurityConfig({ policyPath: missing, requestedMode: 'balanced' });
+  assert.equal(open.policy.mode, 'open');
+  assert.equal(evaluatePreExecutionPolicy({ name: 'eval', args: { code: 'return 1' }, config: open, requestId: 'open-eval' }).action, 'allow');
+  assert.equal(evaluatePreExecutionPolicy({ name: 'screenshot', args: {}, config: open, requestId: 'open-shot' }).action, 'allow');
+  assert.equal(evaluatePreExecutionPolicy({ name: 'click', args: {}, config: open, requestId: 'open-click' }).action, 'allow');
+  assert.equal(evaluatePreExecutionPolicy({ name: 'eval', args: { code: 'return 1' }, config: balanced, requestId: 'balanced-eval' }).action, 'confirm');
+  assert.equal(evaluatePreExecutionPolicy({ name: 'screenshot', args: {}, config: balanced, requestId: 'balanced-shot' }).action, 'confirm');
+  await fsp.rm(dir, { recursive: true, force: true });
+});
+
+test('open mode respects explicit per-tool overrides', async () => {
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'helm-config-open-override-'));
+  const policyPath = path.join(dir, 'policy.json');
+  await fsp.writeFile(policyPath, JSON.stringify({ version: 1, mode: 'open', tools: {
+    eval: { mode: 'confirm' }, screenshot: { mode: 'block' }, click: { mode: 'block' },
+  } }), 'utf8');
+  const config = await loadSecurityConfig({ policyPath });
+  assert.equal(config.policy.mode, 'open');
+  assert.equal(evaluatePreExecutionPolicy({ name: 'eval', args: {}, config, requestId: 'override-eval' }).action, 'confirm');
+  assert.equal(evaluatePreExecutionPolicy({ name: 'screenshot', args: {}, config, requestId: 'override-shot' }).action, 'block');
+  assert.equal(evaluatePreExecutionPolicy({ name: 'click', args: {}, config, requestId: 'override-click' }).action, 'block');
+  await fsp.rm(dir, { recursive: true, force: true });
+});
+
+test('managed policy guards eval and prevents allow screenshot downgrade', async () => {
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'helm-config-managed-guards-'));
+  const policyPath = path.join(dir, 'policy.json');
+  await fsp.writeFile(policyPath, JSON.stringify({ version: 1, mode: 'managed', tools: {
+    eval: { mode: 'allow' }, screenshot: { mode: 'allow' }, click: { mode: 'allow' },
+  } }), 'utf8');
+  const config = await loadSecurityConfig({ policyPath });
+  assert.equal(evaluatePreExecutionPolicy({ name: 'eval', args: {}, config, requestId: 'managed-eval' }).action, 'block');
+  assert.equal(evaluatePreExecutionPolicy({ name: 'screenshot', args: {}, config, requestId: 'managed-shot' }).action, 'confirm');
+  assert.equal(evaluatePreExecutionPolicy({ name: 'click', args: {}, config, requestId: 'managed-click' }).action, 'allow');
   await fsp.rm(dir, { recursive: true, force: true });
 });

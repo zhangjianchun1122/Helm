@@ -215,19 +215,13 @@ try {
   ok('download url 模式：需经 MCP tools/call 调用，bridge.invoke 不支持（设计如此）', true, '跳过—见说明');
 } catch (e) { ok('download url', false, e.message); }
 
-console.log('\n--- 14. download ref 模式：扩展取 href（验证 eval 取 href 能力） ---');
+console.log('\n--- 14. download ref 模式：快照取 href（指定 tab/frame 解析） ---');
 try {
-  // download ref 模式依赖 eval 取 href，但 example.com 有严格 CSP 导致 eval 不可用。
-  // 这是 eval 工具的已知限制（非 download 的问题）。ref 模式在无 CSP 站点可用。
-  // 这里验证：在受 CSP 站点 eval 报错时，download 能给出清晰的失败原因（而非静默失败）。
-  try {
-    await evalJs('const a = document.querySelector("a"); return a ? a.href : null;');
-    ok('eval 取 href（无 CSP 站点可用）', true);
-  } catch (e) {
-    ok('eval 受 CSP 限制（已知遗留，非 download bug）', /CSP|unsafe-eval|EvalError/i.test(e.message), e.message.slice(0, 100));
-  }
-  ok('download ref 模式：取 href 步骤行为明确（成功或 CSP 报错）', true);
-} catch (e) { ok('download ref 取 href', false, e.message); }
+  // download(ref) 现在通过 snapshot 的 attrs.href 解析地址，不再依赖 eval 或页面 CSP。
+  const snapshot = await invoke('snapshot', { options: { interactiveOnly: true } }, {});
+  const link = snapshot?.elements?.find((element) => element.tag === 'a' && element.attrs?.href);
+  ok('snapshot 返回可下载 href', !!link, link ? String(link.attrs.href).slice(0, 100) : '未找到带 href 的链接');
+} catch (e) { ok('download ref 快照取 href', false, e.message); }
 
 console.log(`\n${'='.repeat(50)}`);
 console.log(`验证结果: 通过 ${pass} / 失败 ${fail}`);

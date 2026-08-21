@@ -7,7 +7,7 @@
  *
  * 验证项：
  *  A. MCP initialize 握手
- *  B. tools/list 返回 9 个工具
+ *  B. tools/list 返回 31 个工具
  *  C. 扩展未连接时 tools/call 返回友好错误
  *  D. 扩展连上后，tools/call -> bridge -> offscreen -> 回程 全链路往返
  *  E. get_snapshot 走全链路并拿到模拟数据
@@ -25,6 +25,7 @@ const GATEWAY = join(dirname(fileURLToPath(import.meta.url)), 'mcp-server.mjs');
 const WS_URL = 'ws://127.0.0.1:8787';
 
 let pass = 0, fail = 0;
+let runError = null;
 function ok(name, cond, detail = '') {
   if (cond) { pass++; console.log(`  ✓ ${name}`); }
   else { fail++; console.log(`  ✗ ${name} ${detail ? '— ' + detail : ''}`); }
@@ -35,6 +36,8 @@ const proc = spawn('node', [GATEWAY], { stdio: ['pipe', 'pipe', 'inherit'] });
 proc.on('error', (e) => { console.error('启动网关失败:', e); process.exit(1); });
 
 let mcpBuffer = '';
+let extWs;
+let tmpDir = null;
 function sendMCP(obj) {
   return new Promise((resolve) => {
     const id = obj.id;
@@ -60,6 +63,15 @@ function sendMCP(obj) {
   });
 }
 
+async function cleanup() {
+  try { if (extWs) extWs.close(); } catch (_) {}
+  try { proc.kill(); } catch (_) {}
+  if (tmpDir) {
+    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
+  }
+}
+
+try {
 // 等 bridge 起来
 await new Promise((r) => setTimeout(r, 1200));
 
@@ -74,9 +86,9 @@ ok('返回 serverInfo', init?.result?.serverInfo?.name === 'helm');
 console.log('\n=== B. tools/list ===');
 const list = await sendMCP({ jsonrpc: '2.0', id: 2, method: 'tools/list' });
 const toolNames = (list?.result?.tools || []).map((t) => t.name);
-ok('返回 29 个工具', toolNames.length === 29, `实际 ${toolNames.length}: ${toolNames.join(',')}`);
-ok('含核心工具 navigate/create_tab/get_snapshot/click/fill/eval',
-  ['navigate', 'create_tab', 'get_snapshot', 'click', 'fill', 'eval'].every((n) => toolNames.includes(n)));
+ok('返回 31 个工具', toolNames.length === 31, `实际 ${toolNames.length}: ${toolNames.join(',')}`);
+ok('含核心工具 navigate/create_tab/activate_tab/close_tab/get_snapshot/click/fill/eval',
+  ['navigate', 'create_tab', 'activate_tab', 'close_tab', 'get_snapshot', 'click', 'fill', 'eval'].every((n) => toolNames.includes(n)));
 ok('含 wait/screenshot/scroll/hover/set_active_frame/drag/save_file/download',
   ['wait', 'screenshot', 'scroll', 'hover', 'set_active_frame', 'drag', 'save_file', 'download'].every((n) => toolNames.includes(n)));
 
@@ -92,7 +104,7 @@ if (noExt?.result?.isError) {
 
 // ---------- 连模拟扩展 ----------
 console.log('\n=== D. 模拟扩展 offscreen 连网关 WS ===');
-const extWs = new WebSocket(WS_URL);
+extWs = new WebSocket(WS_URL);
 let extConnected = false;
 const pendingExt = new Map(); // id -> resolve
 let extId = 1;
@@ -123,6 +135,12 @@ extWs.on('message', (raw) => {
         // mock 只回显参数，验证 MCP→bridge→扩展 的 url/active 映射正确
         data = { ok: true, tabId: 2, url: msg.args?.url || 'about:blank',
           title: 'new tab', echoedActive: msg.args?.active };
+        break;
+      case 'activateTab':
+        data = { ok: true, tabId: msg.tabIdHint ?? 1, active: true, echoedTabIdHint: msg.tabIdHint };
+        break;
+      case 'closeTab':
+        data = { ok: true, closedTabId: msg.tabIdHint ?? 1, echoedTabIdHint: msg.tabIdHint };
         break;
       case 'click':
         data = { ok: true };
@@ -207,6 +225,18 @@ const ct3Text = ct3?.result?.content?.[0]?.text || '';
 ok('create_tab active:false 未报错', ct3?.result?.isError !== true, JSON.stringify(ct3?.result).slice(0, 200));
 ok('create_tab active:false 原样透传', /"echoedActive"\s*:\s*false/.test(ct3Text), ct3Text.slice(0, 200));
 
+console.log('\n=== F3. activate_tab / close_tab 全链路与 tabId 映射 ===');
+const at = await sendMCP({ jsonrpc: '2.0', id: 53, method: 'tools/call',
+  params: { name: 'activate_tab', arguments: { tabId: 7 } } });
+const atText = at?.result?.content?.[0]?.text || '';
+ok('activate_tab 未报错', at?.result?.isError !== true, atText.slice(0, 200));
+ok('activate_tab action 和 tabIdHint 到达扩展', /"tabId"\s*:\s*7/.test(atText) && /"echoedTabIdHint"\s*:\s*7/.test(atText), atText.slice(0, 200));
+const ct4 = await sendMCP({ jsonrpc: '2.0', id: 54, method: 'tools/call',
+  params: { name: 'close_tab', arguments: { tabId: 8 } } });
+const ct4Text = ct4?.result?.content?.[0]?.text || '';
+ok('close_tab 未报错', ct4?.result?.isError !== true, ct4Text.slice(0, 200));
+ok('close_tab action 和 tabIdHint 到达扩展', /"closedTabId"\s*:\s*8/.test(ct4Text) && /"echoedTabIdHint"\s*:\s*8/.test(ct4Text), ct4Text.slice(0, 200));
+
 console.log('\n=== G. click 带 frameId 透传 ===');
 const clk = await sendMCP({ jsonrpc: '2.0', id: 6, method: 'tools/call',
   params: { name: 'click', arguments: { ref: '1', button: 'right', frameId: 5 } } });
@@ -275,7 +305,7 @@ ok('drag steps 透传', /20/.test(dgText), dgText.slice(0, 200));
 
 // ---------- N. 本地 fs 工具真实测试（不经扩展，网关子进程直接 fs） ----------
 console.log('\n=== N. save_file / read_file / list_files 真实 fs ===');
-const tmpDir = join(os.tmpdir(), `bt-e2e-${Date.now()}`);
+tmpDir = join(os.tmpdir(), `bt-e2e-${Date.now()}`);
 const tmpFile = join(tmpDir, 'test.txt');
 
 // N1. save_file 写入
@@ -327,20 +357,25 @@ const dl = await sendMCP({ jsonrpc: '2.0', id: 22, method: 'tools/call',
 const dlText = dl?.result?.content?.[0]?.text || '';
 ok('download 未报错', dl?.result?.isError !== true, dlText.slice(0, 200));
 ok('download 返回 ok:true', /"ok"\s*:\s*true/.test(dlText), dlText.slice(0, 200));
-ok('download 文件已落盘', fs.existsSync(dlPath), `应存在于 ${dlPath}`);
-const dlStat = fs.statSync(dlPath);
-ok('download 文件非空', dlStat.size > 0, `size=${dlStat.size}`);
+const dlExists = fs.existsSync(dlPath);
+ok('download 文件已落盘', dlExists, `应存在于 ${dlPath}`);
+if (dlExists) {
+  const dlStat = fs.statSync(dlPath);
+  ok('download 文件非空', dlStat.size > 0, `size=${dlStat.size}`);
+} else {
+  ok('download 文件非空', false, '文件不存在，跳过 statSync');
+}
 
-// 清理临时目录
-try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (_) {}
-
-// ---------- 收尾 ----------
-extWs.close();
-proc.kill();
+} catch (error) {
+  runError = error;
+  console.error('\nverify-e2e 异常:', error?.message || error);
+} finally {
+  await cleanup();
+}
 
 await new Promise((r) => setTimeout(r, 300));
 
 console.log(`\n${'='.repeat(50)}`);
 console.log(`验证结果: 通过 ${pass} / 失败 ${fail}`);
 console.log(`${'='.repeat(50)}`);
-process.exit(fail ? 1 : 0);
+process.exit(runError || fail ? 1 : 0);

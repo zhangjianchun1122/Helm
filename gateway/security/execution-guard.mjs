@@ -22,6 +22,17 @@ export async function executeToolSecure({ name, args = {}, transport, executeRaw
       const decision = evaluatePreExecutionPolicy({ name, args, config, requestId: logicalRequestId });
       if (decision.action === 'block') {
         await audit({ requestId, transport, tool: name, outcome: 'blocked', durationMs: Date.now() - started, args, result: { ok: false }, security: {} });
+        if (decision.code === 'HELM_SECURITY_POLICY_MISSING' || decision.code === 'HELM_SECURITY_POLICY_INVALID') {
+          return {
+            ok: false,
+            error: {
+              code: 'HELM_POLICY_NOT_LOADED',
+              policyCode: decision.code,
+              tool: name,
+              message: 'Security policy not loaded in managed mode',
+            },
+          };
+        }
         return { ok: false, error: { code: decision.code, tool: name, message: 'Tool execution blocked by security policy' } };
       }
       if (decision.action === 'confirm') {

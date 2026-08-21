@@ -5,7 +5,7 @@ import { executeTool } from './tool-executor.mjs';
 
 await startOrAttach();
 const PROTOCOL_VERSION = '2024-11-05';
-const SERVER_INFO = { name: 'helm', version: '0.1.0' };
+const SERVER_INFO = { name: 'helm', version: '0.2.5' };
 
 process.stdin.setEncoding('utf8');
 let buffer = '';
@@ -34,7 +34,12 @@ async function handleMessage(line) {
   const { name, arguments: args = {} } = params || {};
   if (!TOOLS.some((tool) => tool.name === name)) return send({ jsonrpc: '2.0', id, error: { code: -32602, message: `未知工具: ${name}` } });
   const execution = await executeTool({ name, args, transport: 'mcp', requestId: String(id) });
-  if (!execution.ok) return send({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: JSON.stringify(execution.error) }], isError: true } });
+  if (!execution.ok) {
+    if (execution.error?.code === 'HELM_POLICY_NOT_LOADED') {
+      return send({ jsonrpc: '2.0', id, error: { code: -32003, message: execution.error.message, data: execution.error } });
+    }
+    return send({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: JSON.stringify(execution.error) }], isError: true } });
+  }
   const data = execution.result;
   return send({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text: typeof data === 'string' ? data : JSON.stringify(data, null, 2) }] } });
 }

@@ -1,13 +1,13 @@
 /**
  * test-download-ref.mjs — download ref 模式真实链路测试
  *
- * 之前 download ref 模式在 example.com 被 CSP 挡住（eval 取 href 失败）。
+ * 之前 download ref 模式在 example.com 被 CSP 挡住；现在通过 snapshot 读取 href，
  * 本测试起一个本地无 CSP 的 HTTP 服务，提供：
  *   - /index.html  含 <a href="/file.txt"> 的页面
  *   - /file.txt    可下载的小文件
- * 然后用扩展 eval 取 <a> 的 href，验证 ref 模式能完成 download。
+ * 然后从快照读取 <a> 的 href，验证 ref 模式能完成 download。
  *
- * 链路：get_snapshot 拿 <a> ref → MCP download(ref) → 扩展 eval 取 href
+ * 链路：get_snapshot 拿 <a> ref → MCP download(ref) → 快照 attrs.href
  *      → 网关 fetch 该 href → fs 写盘 → 对比内容
  *
  * 因为 download 在 mcp-server 特判处理（不经 bridge.invoke），
@@ -117,8 +117,8 @@ if (!aRef) {
   httpServer.close(); proc.kill(); process.exit(1);
 }
 
-// 3. download ref 模式：传 ref，扩展应 eval 取 href 后下载
-console.log('\n--- 3. download ref 模式（扩展取 href → 网关 fetch 写盘） ---');
+// 3. download ref 模式：传 ref，网关从指定 tab/frame 的快照 attrs.href 取地址后下载
+console.log('\n--- 3. download ref 模式（快照取 href → 网关 fetch 写盘） ---');
 const dlPath = join(os.tmpdir(), `helm-dl-ref-${Date.now()}.txt`);
 const dl = await sendMCP({ jsonrpc: '2.0', id: 3, method: 'tools/call',
   params: { name: 'download', arguments: { ref: aRef, path: dlPath } } });

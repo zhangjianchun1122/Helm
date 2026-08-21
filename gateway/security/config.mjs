@@ -50,6 +50,24 @@ function finalizePolicy(policy, defaultAuditPath) {
   return policy;
 }
 
+function buildPolicy(mode, overrides = {}) {
+  const defaults = structuredClone(DEFAULT_POLICY);
+  if (mode === 'open') {
+    defaults.tools.eval = { mode: 'allow' };
+    defaults.tools.screenshot = { mode: 'allow' };
+  }
+  const policy = deepMerge(defaults, overrides);
+  policy.mode = mode;
+  return policy;
+}
+
+function applyManagedGuards(policy) {
+  if (policy.mode !== 'managed') return policy;
+  policy.tools.eval = { mode: 'block' };
+  if (policy.tools.screenshot?.mode === 'allow') policy.tools.screenshot = { mode: 'confirm' };
+  return policy;
+}
+
 export async function loadSecurityConfig({ policyPath = process.env.HELM_SECURITY_POLICY, requestedMode = process.env.HELM_SECURITY_MODE } = {}) {
   const defaultPath = path.join(process.env.APPDATA || os.homedir(), 'Helm', 'security-policy.json');
   const defaultAuditPath = path.resolve(process.env.HELM_AUDIT_PATH || path.join(process.env.APPDATA || os.homedir(), 'Helm', 'audit-log.jsonl'));
@@ -58,26 +76,23 @@ export async function loadSecurityConfig({ policyPath = process.env.HELM_SECURIT
   try { raw = await fsp.readFile(resolvedPath, 'utf8'); }
   catch (error) {
     if (requestedMode === 'managed') return deepFreeze({ ok: false, mode: 'managed', code: 'HELM_SECURITY_POLICY_MISSING', path: resolvedPath });
-    const policy = finalizePolicy(deepMerge(DEFAULT_POLICY, requestedMode ? { mode: requestedMode } : {}), defaultAuditPath);
+    const mode = requestedMode || DEFAULT_POLICY.mode;
+    const policy = finalizePolicy(applyManagedGuards(buildPolicy(mode)), defaultAuditPath);
     validate(policy);
     return deepFreeze({ ok: true, source: 'builtin', path: resolvedPath, hash: null, policy });
   }
   let parsedMode = requestedMode;
   try {
     const parsed = JSON.parse(raw);
-    parsedMode = requestedMode || parsed?.mode;
-    const policy = finalizePolicy(deepMerge(DEFAULT_POLICY, parsed), defaultAuditPath);
-    if (requestedMode) policy.mode = requestedMode;
+    parsedMode = requestedMode || parsed?.mode || DEFAULT_POLICY.mode;
+    const policy = finalizePolicy(applyManagedGuards(buildPolicy(parsedMode, parsed)), defaultAuditPath);
     validate(policy);
-    if (policy.mode === 'managed') {
-      policy.tools.eval = { mode: 'block' };
-      if (policy.tools.screenshot?.mode === 'allow') policy.tools.screenshot = { mode: 'confirm' };
-    }
     return deepFreeze({ ok: true, source: 'file', path: resolvedPath, hash: crypto.createHash('sha256').update(raw).digest('hex'), policy });
   } catch (error) {
-    const mode = parsedMode === 'managed' ? 'managed' : 'balanced';
+    const mode = parsedMode === 'managed' ? 'managed' : parsedMode === 'open' ? 'open' : 'balanced';
     if (mode === 'managed') return deepFreeze({ ok: false, mode, code: 'HELM_SECURITY_POLICY_INVALID', path: resolvedPath });
-    return deepFreeze({ ok: true, source: 'builtin-fallback', warning: 'HELM_SECURITY_POLICY_INVALID', path: resolvedPath, hash: null, policy: finalizePolicy(deepMerge(DEFAULT_POLICY, {}), defaultAuditPath) });
+    const policy = finalizePolicy(buildPolicy(mode), defaultAuditPath);
+    return deepFreeze({ ok: true, source: 'builtin-fallback', warning: 'HELM_SECURITY_POLICY_INVALID', path: resolvedPath, hash: null, policy });
   }
 }
 

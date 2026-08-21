@@ -35,7 +35,8 @@ const server = http.createServer(async (req, res) => {
     let body = ''; for await (const chunk of req) body += chunk;
     let parsed; try { parsed = JSON.parse(body); } catch { return end(res, 400, { error: 'Invalid JSON body' }); }
     if (!TOOLS.some((tool) => tool.name === parsed.name)) return end(res, 404, { error: `未知工具: ${parsed.name}` });
-    return end(res, 200, await executeTool({ name: parsed.name, args: parsed.arguments || {}, transport: 'http', requestId: crypto.randomUUID() }));
+    const execution = await executeTool({ name: parsed.name, args: parsed.arguments || {}, transport: 'http', requestId: crypto.randomUUID() });
+    return end(res, execution.error?.code === 'HELM_POLICY_NOT_LOADED' ? 503 : 200, execution);
   }
   return end(res, 404, { error: 'Not found' });
 });

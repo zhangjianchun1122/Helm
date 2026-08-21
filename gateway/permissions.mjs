@@ -135,6 +135,8 @@ export async function revokePermission(tool, scope = 'all') {
 
   const revoked = [];
 
+  if (scope === 'all' && onceAllowed.delete(tool)) revoked.push('once');
+
   if (scope === 'session' || scope === 'all') {
     if (sessionPermissions.has(tool)) {
       sessionPermissions.delete(tool);
