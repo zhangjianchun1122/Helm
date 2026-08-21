@@ -16,12 +16,14 @@
  */
 import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // 默认用已部署的网关副本；HELM_GATEWAY_DIR 可覆盖（比如想直接跑仓库版本）
 const GATEWAY_DIR = process.env.HELM_GATEWAY_DIR
   || path.dirname(fileURLToPath(import.meta.url));
+const EXPECTED_EXTENSION_VERSION = JSON.parse(fs.readFileSync(path.join(GATEWAY_DIR, '..', 'extension', 'manifest.json'), 'utf8')).version;
 const proc = spawn('node', [path.join(GATEWAY_DIR, 'mcp-server.mjs')], { stdio: ['pipe', 'pipe', 'inherit'] });
 let buf = '';
 let seq = 300;
@@ -69,7 +71,17 @@ async function callConfirmed(name, args = {}) {
 }
 
 let pass = 0, fail = 0;
+const testTabIds = new Set();
 const ok = (n, c, d = '') => { if (c) { pass++; console.log(`  \u2713 ${n}`); } else { fail++; console.log(`  \u2717 ${n}${d ? ' \u2014 ' + d : ''}`); } };
+
+async function cleanupTestTabs() {
+  for (const tabId of [...testTabIds].reverse()) {
+    try {
+      const tabs = json(await call('list_tabs', {})) || [];
+      if (tabs.some((tab) => tab.id === tabId)) await call('close_tab', { tabId });
+    } catch (_) { /* best effort cleanup */ }
+  }
+}
 
 await new Promise((r) => setTimeout(r, 1500));
 await send('initialize', { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'p0-verify', version: '1' } });
@@ -81,6 +93,13 @@ if (!probe || !('tabId' in probe)) {
   console.log('\n[扩展] 跑的是 frame 作用域按 tab 隔离之前的版本');
   console.log('       请在 chrome://extensions 点 Helm 的「重新加载」后重跑');
   console.log('       get_active_frame 返回:', JSON.stringify(probe));
+  proc.kill();
+  process.exit(2);
+}
+const reloadProbe = json(await call('reload_extension', {}));
+if (reloadProbe?.version && reloadProbe.version !== EXPECTED_EXTENSION_VERSION) {
+  console.log(`\n[扩展] 实际加载版本 ${reloadProbe.version}，磁盘版本 ${EXPECTED_EXTENSION_VERSION}`);
+  console.log('       当前浏览器仍加载旧部署目录，请安装/加载最新 extension/ 后重跑');
   proc.kill();
   process.exit(2);
 }
@@ -104,14 +123,18 @@ function hintIfStaleOrMinimized(res) {
 
 console.log('[扩展] frame 作用域已按 tab 隔离，继续验证\n');
 
+let runError = null;
+try {
 console.log('=== 准备：前台 tab F 与后台 tab G ===');
 const f = json(await call('create_tab', { url: 'https://example.com/' }));
 const tabF = f?.tabId;
+if (typeof tabF === 'number') testTabIds.add(tabF);
 ok('前台 tab F 创建', typeof tabF === 'number', JSON.stringify(f));
 
 // active:false 后台打开，但按既有设计它会成为操作目标
 const g = json(await call('create_tab', { url: 'https://example.org/', active: false }));
 const tabG = g?.tabId;
+if (typeof tabG === 'number') testTabIds.add(tabG);
 ok('后台 tab G 创建', typeof tabG === 'number', JSON.stringify(g));
 
 const tabs = json(await call('list_tabs', {})) || [];
@@ -178,11 +201,64 @@ ok('F 的 frame 作用域可复位为主文档', resetF?.activeFrameId === null,
 const snapFAfter = await call('get_snapshot', { tabId: tabF });
 ok('复位后 F 上 get_snapshot 恢复正常', !isErr(snapFAfter), text(snapFAfter).slice(0, 120));
 
+console.log('\n=== P1：激活、关闭、回退与错误语义 ===');
+const activateG = json(await call('activate_tab', { tabId: tabG }));
+ok('显式激活 G 成功', activateG?.ok === true && activateG?.tabId === tabG, JSON.stringify(activateG));
+const activeAfterActivate = (json(await call('list_tabs', {})) || []).find((tab) => tab.active);
+ok('显式激活后 G 为前台', activeAfterActivate?.id === tabG, `前台实为 ${activeAfterActivate?.id}`);
+const returnToF = json(await call('activate_tab', { tabId: tabF }));
+const activeBeforeHighlight = (json(await call('list_tabs', {})) || []).find((tab) => tab.active);
+ok('切回 F 后 F 为前台', returnToF?.tabId === tabF && activeBeforeHighlight?.id === tabF, JSON.stringify(activeBeforeHighlight));
+
+// 让显式 tabId 操作产生高亮，再检查后台目标 G 上的高亮。
+// 若高亮错误地跟随 pendingTabId，它会留在活动页 F，G 上的读取会返回 false。
+const snapForHighlight = await call('get_snapshot', { tabId: tabG });
+ok('显式 G 操作成功（高亮前置）', !isErr(snapForHighlight), text(snapForHighlight).slice(0, 120));
+await new Promise((r) => setTimeout(r, 250));
+const highlightG = await callConfirmed('eval', { tabId: tabG, code: "return !!document.getElementById('__helm_highlight__')" });
+ok('高亮跟随显式目标 G', highlightG?.result === true || highlightG === true, JSON.stringify(highlightG));
+
+const setGTarget = json(await call('get_active_frame', { tabId: tabG }));
+ok('关闭前 G 仍是默认目标候选', setGTarget?.tabId === tabG, JSON.stringify(setGTarget));
+const staleId = 2147483647;
+const stale = await call('get_snapshot', { tabId: staleId });
+ok('陈旧 tabId 返回友好错误', isErr(stale) && /已关闭或不存在|新建标签页/.test(text(stale)) && !/No tab with id/i.test(text(stale)), text(stale).slice(0, 180));
+const zeroId = await call('get_snapshot', { tabId: 0 });
+ok('tabId=0 不静默回退', isErr(zeroId) && /已关闭或不存在|新建标签页/.test(text(zeroId)), text(zeroId).slice(0, 180));
+
+const closedG = json(await call('close_tab', { tabId: tabG }));
+testTabIds.delete(tabG);
+ok('显式关闭 G 成功', closedG?.ok === true && closedG?.closedTabId === tabG, JSON.stringify(closedG));
+const afterCloseTabs = json(await call('list_tabs', {})) || [];
+ok('关闭 G 后 F 仍存在且为前台', afterCloseTabs.some((tab) => tab.id === tabF) && afterCloseTabs.find((tab) => tab.active)?.id === tabF, JSON.stringify(afterCloseTabs));
+const closedFrame = json(await call('get_active_frame', { tabId: tabG }));
+ok('关闭 G 后 frame scope 已清理', closedFrame?.code === 'HELM_TAB_NOT_FOUND' || /已关闭或不存在/.test(JSON.stringify(closedFrame)), JSON.stringify(closedFrame));
+
+// active:false 的 H 会成为默认操作目标但保持 F 在前台；不传 tabId 关闭它，
+// 才能验证 close_tab 关闭当前目标后的 pendingTabId 回退。
+const h = json(await call('create_tab', { url: 'https://example.net/', active: false }));
+const tabH = h?.tabId;
+if (typeof tabH === 'number') testTabIds.add(tabH);
+ok('后台 tab H 创建为默认目标', typeof tabH === 'number', JSON.stringify(h));
+const closedH = json(await call('close_tab', {}));
+testTabIds.delete(tabH);
+ok('不传 tabId 关闭当前目标 H 成功', closedH?.ok === true && closedH?.closedTabId === tabH, JSON.stringify(closedH));
+const afterDefaultCloseTabs = json(await call('list_tabs', {})) || [];
+ok('关闭当前目标 H 后 F 仍为前台', afterDefaultCloseTabs.find((tab) => tab.active)?.id === tabF, JSON.stringify(afterDefaultCloseTabs));
+const defaultAfterClose = json(await call('get_active_frame', {}));
+ok('关闭当前目标后默认目标回退到 F', defaultAfterClose?.tabId === tabF, JSON.stringify(defaultAfterClose));
+
+} catch (error) {
+  runError = error;
+  console.error('\nP1 回归脚本异常:', error?.message || error);
+} finally {
+  await cleanupTestTabs();
+}
 console.log(`\n${'='.repeat(54)}`);
-console.log(`P0 验证: 通过 ${pass} / 失败 ${fail}`);
-console.log(`遗留测试标签: ${tabF}, ${tabG}`);
+console.log(`P1 验证: 通过 ${pass} / 失败 ${fail}`);
+console.log('测试创建的标签页已清理');
 console.log(`${'='.repeat(54)}`);
 
 proc.kill();
 await new Promise((r) => setTimeout(r, 300));
-process.exit(fail ? 1 : 0);
+process.exit(runError || fail ? 1 : 0);

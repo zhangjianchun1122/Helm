@@ -10,6 +10,10 @@ const VALID_FILTER_LEVELS = ['none', 'basic', 'smart'];
 const envFilterLevel = process.env.HELM_FILTER_LEVEL?.toLowerCase();
 const DEFAULT_FILTER_LEVEL = VALID_FILTER_LEVELS.includes(envFilterLevel) ? envFilterLevel : 'basic';
 
+// 标签页作用域参数：所有浏览器工具共用同一语义，schema 里统一引用这份定义，
+// 避免各工具手写描述各自漂移。省略时作用于当前目标标签页。
+const TAB_ID_PROP = { type: 'integer', description: '目标标签页 id；省略则用当前目标标签页' };
+
 export const TOOLS = [
   {
     name: 'navigate',
@@ -18,6 +22,7 @@ export const TOOLS = [
       type: 'object',
       properties: {
         url: { type: 'string', description: '目标 URL，含 http(s)://' },
+        tabId: TAB_ID_PROP,
       },
       required: ['url'],
     },
@@ -39,9 +44,34 @@ export const TOOLS = [
     inputSchema: { type: 'object', properties: {} },
   },
   {
+    name: 'activate_tab',
+    description: '激活指定标签页并切换到前台。省略 tabId 时使用当前目标标签页。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        tabId: TAB_ID_PROP,
+      },
+    },
+  },
+  {
+    name: 'close_tab',
+    description: '关闭真实浏览器标签页。此操作不可逆，未保存的表单内容可能丢失；省略 tabId 时关闭当前目标标签页。',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        tabId: TAB_ID_PROP,
+      },
+    },
+  },
+  {
     name: 'list_frames',
     description: '列出当前页所有 iframe（含 frameId/url）。站点若有内嵌 frame，操作前需用本工具定位目标 frame。',
-    inputSchema: { type: 'object', properties: {} },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        tabId: TAB_ID_PROP,
+      },
+    },
   },
   {
     name: 'get_snapshot',
@@ -58,6 +88,7 @@ export const TOOLS = [
           description: `过滤级别：none=不过滤，basic=过滤广告/装饰元素，smart=基础过滤+智能去重（更省 token）。默认值: ${DEFAULT_FILTER_LEVEL}（可通过环境变量 HELM_FILTER_LEVEL 配置）`
         },
         maxElements: { type: 'integer', minimum: 1, maximum: 500, default: 500, description: '最多采集的元素数；扩展侧达到上限即停止遍历' },
+        tabId: TAB_ID_PROP,
       },
     },
   },
@@ -70,6 +101,7 @@ export const TOOLS = [
         ref: { type: 'string', description: 'get_snapshot 返回的 ref' },
         button: { type: 'string', enum: ['left', 'right'], default: 'left' },
         frameId: { type: 'integer' },
+        tabId: TAB_ID_PROP,
       },
       required: ['ref'],
     },
@@ -82,6 +114,7 @@ export const TOOLS = [
       properties: {
         ref: { type: 'string', description: 'get_snapshot 返回的 ref' },
         frameId: { type: 'integer' },
+        tabId: TAB_ID_PROP,
       },
       required: ['ref'],
     },
@@ -95,6 +128,7 @@ export const TOOLS = [
         ref: { type: 'string' },
         value: { type: 'string' },
         frameId: { type: 'integer' },
+        tabId: TAB_ID_PROP,
       },
       required: ['ref', 'value'],
     },
@@ -107,6 +141,7 @@ export const TOOLS = [
       properties: {
         key: { type: 'string', description: 'KeyEvent key 名，如 Enter' },
         frameId: { type: 'integer' },
+        tabId: TAB_ID_PROP,
       },
       required: ['key'],
     },
@@ -121,6 +156,7 @@ export const TOOLS = [
         frameId: { type: 'integer' },
         offset: { type: 'integer', minimum: 0, default: 0 },
         maxChars: { type: 'integer', minimum: 1, maximum: 20000, default: 20000 },
+        tabId: TAB_ID_PROP,
       },
       required: ['ref'],
     },
@@ -134,6 +170,7 @@ export const TOOLS = [
         code: { type: 'string', description: '函数体代码，例如 "return document.title"' },
         arg: { description: '任意传参，将被序列化后传入' },
         frameId: { type: 'integer' },
+        tabId: TAB_ID_PROP,
         confirmationId: { type: 'string', description: '用户确认后重试时携带的单次确认 ID' },
         confirmationRequestId: { type: 'string', description: '首次拦截返回的逻辑 requestId，必须原样返回' },
       },
@@ -154,6 +191,7 @@ export const TOOLS = [
         timeoutMs: { type: 'integer', default: 10000, description: '总超时毫秒' },
         intervalMs: { type: 'integer', default: 200, description: '轮询间隔毫秒' },
         frameId: { type: 'integer' },
+        tabId: TAB_ID_PROP,
       },
     },
   },
@@ -165,7 +203,7 @@ export const TOOLS = [
       properties: {
         format: { type: 'string', enum: ['png', 'jpeg'], default: 'png' },
         quality: { type: 'integer', description: 'jpeg 质量 0-100' },
-        tabId: { type: 'integer', description: '目标标签页 id；省略则用当前目标标签页' },
+        tabId: TAB_ID_PROP,
         confirmationId: { type: 'string', description: '用户确认后重试时携带的单次确认 ID' },
         confirmationRequestId: { type: 'string', description: '首次拦截返回的逻辑 requestId，必须原样返回' },
       },
@@ -181,6 +219,7 @@ export const TOOLS = [
         direction: { type: 'string', enum: ['up', 'down', 'left', 'right'] },
         amount: { type: 'integer', default: 300 },
         frameId: { type: 'integer' },
+        tabId: TAB_ID_PROP,
       },
     },
   },
@@ -192,6 +231,7 @@ export const TOOLS = [
       properties: {
         ref: { type: 'string' },
         frameId: { type: 'integer' },
+        tabId: TAB_ID_PROP,
       },
       required: ['ref'],
     },
@@ -203,7 +243,7 @@ export const TOOLS = [
       type: 'object',
       properties: {
         frameId: { type: 'integer', description: 'list_frames 返回的 frameId；传 null 回到主文档' },
-        tabId: { type: 'integer', description: '设给哪个标签页；省略则用当前目标标签页' },
+        tabId: TAB_ID_PROP,
       },
     },
   },
@@ -213,7 +253,7 @@ export const TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        tabId: { type: 'integer', description: '查询哪个标签页；省略则用当前目标标签页' },
+        tabId: TAB_ID_PROP,
       },
     },
   },
@@ -227,6 +267,7 @@ export const TOOLS = [
         toRef: { type: 'string' },
         steps: { type: 'integer', default: 10 },
         frameId: { type: 'integer' },
+        tabId: TAB_ID_PROP,
       },
       required: ['fromRef', 'toRef'],
     },
@@ -281,7 +322,7 @@ export const TOOLS = [
         ref: { type: 'string', description: '页面元素 ref（与 url 二选一）' },
         path: { type: 'string', description: '保存路径。省略则存到 downloads/<文件名>' },
         frameId: { type: 'integer' },
-        tabId: { type: 'integer', description: '目标标签页 id（仅 ref 模式有意义，用于在该标签页取元素 href）；省略则用当前目标标签页' },
+        tabId: TAB_ID_PROP,
       },
     },
   },
@@ -374,6 +415,8 @@ export function mapToolToAction(name, args) {
     case 'navigate':      return ['navigate', { url: rest.url }, opts];
     case 'create_tab':    return ['createTab', { url: rest.url, active: rest.active }, opts];
     case 'list_tabs':     return ['listTabs', {}, opts];
+    case 'activate_tab':  return ['activateTab', {}, opts];
+    case 'close_tab':     return ['closeTab', {}, opts];
     case 'list_frames':   return ['listFrames', {}, opts];
     case 'get_snapshot':  return ['snapshot', { options: { interactiveOnly: rest.interactiveOnly ?? true, filterLevel: rest.filterLevel ?? DEFAULT_FILTER_LEVEL, maxElements: rest.maxElements ?? 500 } }, opts];
     case 'click':         return ['click', { ref: rest.ref, button: rest.button || 'left' }, opts];

@@ -13,9 +13,10 @@ test('tabId 映射成 tabIdHint，固定单次调用的目标标签页', () => {
   assert.deepEqual(opts('get_text', { ref: '2', tabId: 7 }), { tabIdHint: 7 });
 });
 
-test('tabId 与 frameId 可共存且互不干扰', () => {
+test('tabId 与 frameId 可共存且互不干扰，包括 tabId=0', () => {
   assert.deepEqual(opts('get_snapshot', { tabId: 123, frameId: 5 }), { frameId: 5, tabIdHint: 123 });
   assert.deepEqual(opts('click', { ref: '1', frameId: 0, tabId: 9 }), { frameId: 0, tabIdHint: 9 });
+  assert.deepEqual(opts('click', { ref: '1', tabId: 0 }), { tabIdHint: 0 });
 });
 
 test('未传 tabId/frameId 时 opts 为空对象，不注入 undefined', () => {
@@ -55,15 +56,28 @@ test('screenshot 的 tabId 走 opts.tabIdHint，供 sw 侧定位目标 tab', () 
   assert.deepEqual(argsOf('screenshot', { format: 'png', tabId: 5 }), { format: 'png', quality: undefined });
 });
 
-test('声明了 tabId 的工具其 schema 类型为 integer', () => {
-  const declared = TOOLS.filter((t) => t.inputSchema?.properties?.tabId);
-  assert.ok(declared.length >= 4, `应至少有 4 个工具声明 tabId，实际 ${declared.length}`);
-  for (const t of declared) {
+test('所有 tab-aware 工具都声明 integer tabId，非 tab 工具不隐式声明', () => {
+  const expected = new Set([
+    'navigate', 'list_frames', 'get_snapshot', 'click', 'right_click', 'fill', 'press',
+    'get_text', 'eval', 'wait', 'screenshot', 'scroll', 'hover',
+    'set_active_frame', 'get_active_frame', 'drag', 'download', 'activate_tab', 'close_tab',
+  ]);
+  const declared = new Set(TOOLS.filter((t) => t.inputSchema?.properties?.tabId).map((t) => t.name));
+  assert.deepEqual(declared, expected);
+  for (const t of TOOLS) {
+    if (!expected.has(t.name)) assert.ok(!t.inputSchema?.properties?.tabId, `${t.name} 不应声明 tabId`);
+  }
+  for (const t of TOOLS.filter((t) => expected.has(t.name))) {
     assert.equal(t.inputSchema.properties.tabId.type, 'integer', `${t.name} 的 tabId 应为 integer`);
   }
-  // download 是本地工具，tabId 只在 ref 模式下用于定位取 href 的标签页
-  assert.ok(declared.some((t) => t.name === 'download'));
-  assert.ok(declared.some((t) => t.name === 'screenshot'));
+});
+
+test('activate_tab/close_tab 映射 tabId，且 close_tab 明确不可逆影响', () => {
+  assert.deepEqual(mapToolToAction('activate_tab', { tabId: 0 }), ['activateTab', {}, { tabIdHint: 0 }]);
+  assert.deepEqual(mapToolToAction('close_tab', { tabId: 17 }), ['closeTab', {}, { tabIdHint: 17 }]);
+  const close = TOOLS.find((t) => t.name === 'close_tab');
+  assert.match(close.description, /关闭真实浏览器标签页/);
+  assert.match(close.description, /未保存.*丢失/);
 });
 
 test('create_tab 映射透传 url 与 active（含 active:false）', () => {

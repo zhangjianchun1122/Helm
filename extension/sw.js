@@ -40,15 +40,61 @@ async function getActiveTab() {
   return tab;
 }
 
-async function resolveTabId(tabIdHint) {
-  if (tabIdHint) return tabIdHint;
-  if (pendingTabId) {
-    // 校验仍存在
-    try { await chrome.tabs.get(pendingTabId); return pendingTabId; } catch (_) { /* fallthrough */ }
+function tabUnavailableError(tabId) {
+  const error = new Error(`目标标签页 ${tabId} 已关闭或不存在，请新建标签页后重试`);
+  error.code = 'HELM_TAB_NOT_FOUND';
+  error.tabId = tabId;
+  return error;
+}
+
+async function getTabChecked(tabId) {
+  if (!Number.isInteger(tabId)) throw tabUnavailableError(tabId);
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    if (!tab || tab.id == null) throw tabUnavailableError(tabId);
+    return tab;
+  } catch (error) {
+    if (error?.code === 'HELM_TAB_NOT_FOUND') throw error;
+    throw tabUnavailableError(tabId);
+  }
+}
+
+async function persistPendingTab() {
+  await chrome.storage.session.set({ pendingTabId });
+}
+
+async function resolveTabIdInternal(tabIdHint, { persistDefault = true } = {}) {
+  if (tabIdHint != null) {
+    const tab = await getTabChecked(tabIdHint);
+    return tab.id;
+  }
+  if (pendingTabId != null) {
+    try {
+      const tab = await getTabChecked(pendingTabId);
+      return tab.id;
+    } catch (_) {
+      if (persistDefault) {
+        pendingTabId = null;
+        await persistPendingTab();
+      }
+    }
   }
   const tab = await getActiveTab();
-  pendingTabId = tab?.id || null;
-  return pendingTabId;
+  const resolved = tab?.id ?? null;
+  if (persistDefault) {
+    pendingTabId = resolved;
+    await persistPendingTab();
+  }
+  return resolved;
+}
+
+async function resolveTabId(tabIdHint) {
+  return resolveTabIdInternal(tabIdHint, { persistDefault: true });
+}
+
+// 旁路逻辑（例如高亮）只读目标，不因回退活动 tab 改写 pendingTabId。
+async function resolveTabIdReadOnly(tabIdHint) {
+  return resolveTabIdInternal(tabIdHint, { persistDefault: false });
 }
 
 // 解析目标 frame：调用方显式传的 frameId 优先；否则用该 tab 自己的 set_active_frame 设定；
@@ -68,7 +114,7 @@ async function persistFrameScopes() {
 // 设定只对某个 tab 生效的默认 frame。tabId 省略时作用于当前目标 tab。
 async function setActiveFrame(frameId, tabIdHint) {
   const tabId = await resolveTabId(tabIdHint);
-  if (!tabId) throw new Error('set_active_frame: 无可操作的 tab');
+  if (tabId == null) throw new Error('set_active_frame: 无可操作的 tab');
   // frameId 传 null/undefined 表示回到主文档；list_frames 的 frameId=0 即主文档
   if (frameId == null) {
     frameScopes.delete(tabId);
@@ -105,7 +151,7 @@ async function listFrames(tabId) {
 // 这里解包 data 后必须再检查 data.ok，否则错误会被当成成功结果返回给调用方。
 async function dispatchToFrame(action, payload, { frameId, tabIdHint } = {}) {
   const tabId = await resolveTabId(tabIdHint);
-  if (!tabId) throw new Error('无可操作的 tab（请先在浏览器打开目标页面）');
+  if (tabId == null) throw new Error('无可操作的 tab（请先在浏览器打开目标页面）');
   const resolvedFrameId = resolveFrameId(frameId, tabId);
   const msg = { target: 'dom-agent', action, ...payload };
   const options = resolvedFrameId != null ? { frameId: resolvedFrameId } : undefined;
@@ -140,15 +186,40 @@ let highlightTabId = null;       // 当前高亮的 tab（用于切 tab 时熄�
 let highlightTimer = null;       // 空闲超时计时器
 const HIGHLIGHT_IDLE_MS = 8000;  // 空闲多久后淡出
 
+async function getActiveTabAfterClose() {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const active = await getActiveTab();
+    if (active?.id != null) return active;
+    if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+  return null;
+}
+
+async function cleanupRemovedTab(tabId) {
+  const hadFrameScope = frameScopes.delete(tabId);
+  if (highlightTabId === tabId) {
+    highlightTabId = null;
+    if (highlightTimer) clearTimeout(highlightTimer);
+    highlightTimer = null;
+  }
+
+  if (pendingTabId === tabId) {
+    const active = await getActiveTabAfterClose();
+    pendingTabId = active?.id ?? null;
+    await persistPendingTab();
+  }
+  if (hadFrameScope) await persistFrameScopes();
+}
+
 function broadcastAction(phase, info) {
   try {
     chrome.runtime.sendMessage({ type: 'bt-action', phase, ...info }).catch(() => {});
   } catch (_) { /* side panel 未开或 SW 已回收 */ }
   // 高亮：start 点亮/更新标签；end 只更新标签（保持常亮），重置空闲计时
   if (phase === 'start') {
-    highlightCurrentTab('start', info.action).catch(() => {});
+    highlightCurrentTab('start', info.action, info.tabIdHint).catch(() => {});
   } else if (phase === 'end') {
-    highlightCurrentTab('update', '✓ ' + info.action).catch(() => {});
+    highlightCurrentTab('update', '✓ ' + info.action, info.tabIdHint).catch(() => {});
     resetHighlightIdle().catch(() => {});
   }
 }
@@ -157,7 +228,7 @@ function broadcastAction(phase, info) {
 async function resetHighlightIdle() {
   if (highlightTimer) clearTimeout(highlightTimer);
   highlightTimer = setTimeout(async () => {
-    if (highlightTabId) {
+    if (highlightTabId != null) {
       try {
         await chrome.tabs.sendMessage(highlightTabId, { target: 'dom-agent', action: 'hideHighlight' });
       } catch (_) { /* ignore */ }
@@ -169,11 +240,11 @@ async function resetHighlightIdle() {
 
 // 给当前操作页面的主文档发高亮指令
 // 只作用于主文档（frameId 不指定），避免 iframe 内闪烁叠加
-async function highlightCurrentTab(phase, label) {
-  const tabId = await resolveTabId();
-  if (!tabId) return;
+async function highlightCurrentTab(phase, label, tabIdHint) {
+  const tabId = await resolveTabIdReadOnly(tabIdHint);
+  if (tabId == null) return;
   // 切 tab：旧 tab 熄灭，新 tab 点亮
-  if (highlightTabId && highlightTabId !== tabId) {
+  if (highlightTabId != null && highlightTabId !== tabId) {
     try { await chrome.tabs.sendMessage(highlightTabId, { target: 'dom-agent', action: 'hideHighlight' }); } catch (_) {}
   }
   highlightTabId = tabId;
@@ -198,17 +269,18 @@ function summarizeArgs(args = {}, action = '') {
 
 async function handleAction(req) {
   const { action, args = {}, frameId, tabIdHint } = req;
+  const actionTabIdHint = tabIdHint ?? args.tabId;
   const t0 = Date.now();
-  broadcastAction('start', { action, args: summarizeArgs(args, action) });
+  broadcastAction('start', { action, args: summarizeArgs(args, action), tabIdHint: actionTabIdHint });
 
   try {
     const data = await handleActionInner(req);
     broadcastAction('end', { action, ok: true, durationMs: Date.now() - t0,
-      summary: summarizeResult(action, data) });
+      summary: summarizeResult(action, data), tabIdHint: actionTabIdHint });
     return data;
   } catch (e) {
     broadcastAction('end', { action, ok: false, durationMs: Date.now() - t0,
-      error: HelmRedactLite.safeDisplayError(e?.message || e) });
+      error: HelmRedactLite.safeDisplayError(e?.message || e), tabIdHint: actionTabIdHint });
     throw e;
   }
 }
@@ -237,10 +309,11 @@ function summarizeResult(action, data) {
 
 async function handleActionInner(req) {
   const { action, args = {}, frameId, tabIdHint } = req;
+  const effectiveTabIdHint = tabIdHint ?? args.tabId;
 
   switch (action) {
     case 'navigate': {
-      const tabId = await resolveTabId(args.tabId || tabIdHint);
+      const tabId = await resolveTabId(effectiveTabIdHint);
       await chrome.tabs.update(tabId, { url: args.url });
       // 等待页面完成首次加载（dom-agent 由 document_idle 注入）
       await waitTabComplete(tabId);
@@ -256,33 +329,48 @@ async function handleActionInner(req) {
       // 不显式接管的话 resolveTabId 会校验旧 tab 仍存在并继续返回旧 tab
       pendingTabId = created.id;
       // 新 tab 在 frameScopes 里本就没有条目，无需清理
-      await chrome.storage.session.set({ pendingTabId });
+      await persistPendingTab();
       const tab = await chrome.tabs.get(created.id);
       return { ok: true, tabId: tab.id, url: tab.url || '', title: tab.title || '' };
+    }
+    case 'activateTab': {
+      const tabId = await resolveTabId(effectiveTabIdHint);
+      if (tabId == null) throw new Error('activate_tab: 无可操作的 tab');
+      const tab = await chrome.tabs.update(tabId, { active: true });
+      pendingTabId = tab?.id ?? tabId;
+      await persistPendingTab();
+      return { ok: true, tabId: pendingTabId, active: tab?.active ?? true };
+    }
+    case 'closeTab': {
+      const tabId = await resolveTabId(effectiveTabIdHint);
+      if (tabId == null) throw new Error('close_tab: 无可操作的 tab');
+      await chrome.tabs.remove(tabId);
+      await cleanupRemovedTab(tabId);
+      return { ok: true, closedTabId: tabId, pendingTabId };
     }
     case 'listTabs': {
       const tabs = await chrome.tabs.query({});
       return tabs.map((t) => ({ id: t.id, url: t.url, title: t.title, active: t.active }));
     }
     case 'listFrames': {
-      const tabId = await resolveTabId(args.tabId || tabIdHint);
+      const tabId = await resolveTabId(effectiveTabIdHint);
       return listFrames(tabId);
     }
     case 'setActiveFrame':
-      return setActiveFrame(args.frameId, args.tabId ?? tabIdHint);
+      return setActiveFrame(args.frameId, effectiveTabIdHint);
     case 'getActiveFrame':
-      return getActiveFrame(args.tabId ?? tabIdHint);
+      return getActiveFrame(effectiveTabIdHint);
     case 'snapshot':
-      return dispatchToFrame('snapshot', { options: args.options || {} }, { frameId, tabIdHint });
+      return dispatchToFrame('snapshot', { options: args.options || {} }, { frameId, tabIdHint: effectiveTabIdHint });
     case 'click':
-      return dispatchToFrame('click', { ref: args.ref, button: args.button }, { frameId, tabIdHint });
+      return dispatchToFrame('click', { ref: args.ref, button: args.button }, { frameId, tabIdHint: effectiveTabIdHint });
     case 'rightClick': {
       // 用 chrome.debugger 发真实右键事件（isTrusted=true），触发依赖原生 contextmenu 的自定义菜单
       // 先从 dom-agent 拿元素坐标，再用 CDP Input.dispatchMouseEvent 发右键
-      const tabId = await resolveTabId(args.tabId || tabIdHint);
-      if (!tabId) throw new Error('无可操作的 tab');
+      const tabId = await resolveTabId(effectiveTabIdHint);
+      if (tabId == null) throw new Error('无可操作的 tab');
       // 取元素坐标：复用 dispatchToFrame 的 snapshot 能力拿单个 ref 的 rect
-      const snap = await dispatchToFrame('snapshot', { options: { interactiveOnly: false } }, { frameId, tabIdHint });
+      const snap = await dispatchToFrame('snapshot', { options: { interactiveOnly: false } }, { frameId, tabIdHint: effectiveTabIdHint });
       const el = (snap.elements || []).find((e) => String(e.ref) === String(args.ref));
       if (!el) throw new Error(`rightClick: ref ${args.ref} 未在快照中找到`);
       const x = el.rect.x + el.rect.w / 2;
@@ -291,24 +379,24 @@ async function handleActionInner(req) {
       return { ok: true, x, y };
     }
     case 'fill':
-      return dispatchToFrame('fill', { ref: args.ref, value: args.value }, { frameId, tabIdHint });
+      return dispatchToFrame('fill', { ref: args.ref, value: args.value }, { frameId, tabIdHint: effectiveTabIdHint });
     case 'press':
-      return dispatchToFrame('press', { key: args.key }, { frameId, tabIdHint });
+      return dispatchToFrame('press', { key: args.key }, { frameId, tabIdHint: effectiveTabIdHint });
     case 'hover':
-      return dispatchToFrame('hover', { ref: args.ref }, { frameId, tabIdHint });
+      return dispatchToFrame('hover', { ref: args.ref }, { frameId, tabIdHint: effectiveTabIdHint });
     case 'drag':
-      return dispatchToFrame('drag', { fromRef: args.fromRef, toRef: args.toRef, options: args.options }, { frameId, tabIdHint });
+      return dispatchToFrame('drag', { fromRef: args.fromRef, toRef: args.toRef, options: args.options }, { frameId, tabIdHint: effectiveTabIdHint });
     case 'getText':
-      return dispatchToFrame('getText', { ref: args.ref, offset: args.offset, maxChars: args.maxChars }, { frameId, tabIdHint });
+      return dispatchToFrame('getText', { ref: args.ref, offset: args.offset, maxChars: args.maxChars }, { frameId, tabIdHint: effectiveTabIdHint });
     case 'scroll':
-      return dispatchToFrame('scroll', { options: args.options || {} }, { frameId, tabIdHint });
+      return dispatchToFrame('scroll', { options: args.options || {} }, { frameId, tabIdHint: effectiveTabIdHint });
     case 'eval':
       // 用 MAIN world 注入执行（不受扩展 CSP 限制），失败时 fallback 到 dom-agent
-      return evalViaMainWorld(args.code, args.arg, { frameId, tabIdHint });
+      return evalViaMainWorld(args.code, args.arg, { frameId, tabIdHint: effectiveTabIdHint });
     case 'wait':
-      return doWait(args, { frameId, tabIdHint });
+      return doWait(args, { frameId, tabIdHint: effectiveTabIdHint });
     case 'screenshot':
-      return doScreenshot(args, { tabIdHint });
+      return doScreenshot(args, { tabIdHint: effectiveTabIdHint });
     case 'getExtInfo': {
       return {
         ok: true,
@@ -470,7 +558,7 @@ async function doScreenshot(args = {}, { tabIdHint } = {}) {
   const format = args.format === 'jpeg' ? 'jpeg' : 'png';
   const quality = args.quality != null ? Math.max(0, Math.min(100, args.quality)) : null;
   const tabId = await resolveTabId(tabIdHint);
-  if (!tabId) throw new Error('截图失败：无可操作的 tab');
+  if (tabId == null) throw new Error('截图失败：无可操作的 tab');
 
   let tab;
   try {
@@ -598,7 +686,7 @@ async function downloadViaBrowser(url, filename) {
 // 无 CSP 或允许 unsafe-eval 的页面可用。失败时 fallback 到 dom-agent 的 doEval。
 async function evalViaMainWorld(code, arg, { frameId, tabIdHint } = {}) {
   const tabId = await resolveTabId(tabIdHint);
-  if (!tabId) throw new Error('无可操作的 tab');
+  if (tabId == null) throw new Error('无可操作的 tab');
   const resolvedFrameId = resolveFrameId(frameId, tabId);
   const target = { tabId };
   if (resolvedFrameId != null) target.frameIds = [resolvedFrameId];
@@ -700,7 +788,7 @@ async function bootstrap() {
   try {
     await ensureOffscreen();
     const saved = await chrome.storage.session.get(['pendingTabId', 'frameScopes']);
-    if (saved.pendingTabId) pendingTabId = saved.pendingTabId;
+    if (saved.pendingTabId != null) pendingTabId = saved.pendingTabId;
     frameScopes.clear();
     for (const [tabId, frameId] of Object.entries(saved.frameScopes || {})) {
       if (frameId != null) frameScopes.set(Number(tabId), Number(frameId));
@@ -717,7 +805,7 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
   // 截图为了取帧临时切了 tab，那不是用户切页，不能据此改写操作目标
   if (suppressActivationTracking) return;
   // 旧 tab 熄灭高亮
-  if (highlightTabId && highlightTabId !== activeInfo.tabId) {
+  if (highlightTabId != null && highlightTabId !== activeInfo.tabId) {
     try { await chrome.tabs.sendMessage(highlightTabId, { target: 'dom-agent', action: 'hideHighlight' }); } catch (_) {}
     highlightTabId = null;
     if (highlightTimer) { clearTimeout(highlightTimer); highlightTimer = null; }
@@ -726,11 +814,9 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
   await chrome.storage.session.set({ pendingTabId });
 });
 
-// tab 关闭：回收它的 frame 作用域，避免 frameScopes 随开关标签无限增长，
-// 也避免 Chrome 复用 tabId 时继承到上一个页面的 frame
+// tab 关闭：回收它的 frame 作用域、pending 目标和高亮，避免状态残留。
 chrome.tabs.onRemoved.addListener(async (tabId) => {
-  if (!frameScopes.delete(tabId)) return;
-  try { await persistFrameScopes(); } catch (_) { /* ignore */ }
+  try { await cleanupRemovedTab(tabId); } catch (_) { /* ignore */ }
 });
 
 // 兜底：若 setPanelBehavior 未生效，点图标时手动开侧栏
